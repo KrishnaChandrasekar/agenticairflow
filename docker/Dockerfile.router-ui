@@ -1,0 +1,4 @@
+FROM nginx:alpine
+COPY ui/ /usr/share/nginx/html/
+COPY ui/entrypoint.sh /docker-entrypoint.d/10-config.sh
+
