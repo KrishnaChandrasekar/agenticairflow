@@ -4,7 +4,7 @@ This package brings up **Airflow 2.10.5** (CeleryExecutor), the **Agentic Router
 
 ## 1) Start everything
 ```bash
-cd agentic-mvp-all-in-one
+cd agentic-mvp
 docker compose up --build -d
 # wait ~30s for airflow-init to create the admin user
 ```
