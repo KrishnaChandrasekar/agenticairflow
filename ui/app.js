@@ -276,14 +276,27 @@ function renderByAgent(jobs){
   tbody.innerHTML = rows || `<tr><td class="p-2 text-slate-500" colspan="5">No jobs</td></tr>`;
 }
 
+
+// Helper: get job from current state by id
+function findJobById(id){
+  try { return (state.jobs||[]).find(j => String(j.job_id) === String(id)) || null; } catch { return null; }
+}
 // ---------- drawer / logs ----------
 window.openDrawer = async (job_id, status, agent_id, log_path) => {
   state.currentJobId = job_id;
   const title=$("drawer-title"); if(title) title.textContent = `Job ${job_id}`;
-  const meta=$("drawer-meta"); if(meta) meta.innerHTML = `<div class="text-sm space-y-1">
-    <div><b>Status:</b> ${status}</div>
-    <div><b>Agent:</b> ${agent_id || "-"}</div>
-    <div><b>Log path:</b> <span class="font-mono">${log_path || "-"}</span></div>
+  const j = findJobById(job_id) || {};
+  const created = j.created_at ? `${fmtDate(j.created_at)} · ${fmtAgo(j.created_at)}` : "-";
+  const updated = j.updated_at ? `${fmtDate(j.updated_at)} · ${fmtAgo(j.updated_at)}` : "-";
+  const labelsHTML = Object.entries(j.labels || {}).map(([k,v]) => `<span class="chip bg-slate-100">${k}:${v}</span>`).join(" ");
+  const meta=$("drawer-meta"); if(meta) meta.innerHTML = `<div class="text-sm space-y-1">\
+    <div><b>Status:</b> ${status}</div>\
+    <div><b>Agent:</b> ${agent_id || "-"}</div>\
+    <div><b>RC:</b> -</div>\
+    <div><b>Created:</b> ${created}</div>\
+    <div><b>Updated:</b> ${updated}</div>\
+    <div><b>Labels:</b> ${labelsHTML || "-"}</div>\
+    <div><b>Log path:</b> <span class="font-mono">${log_path || "-"}</span></div>\
   </div>`;
   $("drawer")?.showModal();
   startLogFollow(job_id);
@@ -297,11 +310,24 @@ function startLogFollow(job_id){
   const follow = async () => {
     try {
       const s = await fetchJSON(`${BASE}/status/${job_id}`);
-      const meta=$("drawer-meta"); if(meta) meta.innerHTML = `<div class="text-sm space-y-1">
-        <div><b>Status:</b> ${s.status}</div>
-        <div><b>Agent:</b> ${s.agent_id || "-"}</div>
-        <div><b>RC:</b> ${s.rc ?? "-"}</div>
-      </div>`;
+      const meta=$("drawer-meta"); if(meta){
+        const base = findJobById(job_id) || {};
+        const createdSrc = (s.created_at ?? base.created_at);
+        const updatedSrc = (s.updated_at ?? base.updated_at);
+        const labelsSrc = (s.labels ?? base.labels ?? {});
+        const created = createdSrc ? `${fmtDate(createdSrc)} · ${fmtAgo(createdSrc)}` : "-";
+        const updated = updatedSrc ? `${fmtDate(updatedSrc)} · ${fmtAgo(updatedSrc)}` : "-";
+        const labelsHTML = Object.entries(labelsSrc).map(([k,v]) => `<span class="chip bg-slate-100">${k}:${v}</span>`).join(" ");
+        meta.innerHTML = `<div class="text-sm space-y-1">\
+          <div><b>Status:</b> ${s.status}</div>\
+          <div><b>Agent:</b> ${s.agent_id || "-"}</div>\
+          <div><b>RC:</b> ${s.rc ?? "-"}</div>\
+          <div><b>Created:</b> ${created}</div>\
+          <div><b>Updated:</b> ${updated}</div>\
+          <div><b>Labels:</b> ${labelsHTML || "-"}</div>\
+          <div><b>Log path:</b> <span class="font-mono">${s.log_path || base.log_path || "-"}</span></div>\
+        </div>`;
+      }
       const r = await fetch(`${BASE}/logs/${job_id}`);
       const txt = await r.text();
       const pre=$("drawer-log"); if(pre){ pre.textContent = txt; pre.scrollTop = pre.scrollHeight; }
