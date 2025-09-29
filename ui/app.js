@@ -1,3 +1,26 @@
+// ---- TimeRange early bootstrap (ensures availability before init) ----
+(function(){
+  if (!window.TimeRange) {
+    window.TimeRange = {
+      enabled: false,
+      field: 'updated_at',
+      mode: 'relative',
+      relMins: 1440,
+      abs: { fromMs: null, toMs: null },
+      noTzPolicy: 'utc'
+    };
+  }
+  if (typeof window.fmtRangeLabel !== 'function') {
+    window.fmtRangeLabel = function(){
+      const fieldLabel = (window.TimeRange.field === 'created_at') ? 'Created' : 'Updated';
+      return window.TimeRange.enabled ? `${fieldLabel} in Last ${window.TimeRange.relMins/60}h` : `${fieldLabel}: All time`;
+    };
+  }
+  if (typeof window.filterJobsByTime !== 'function') {
+    window.filterJobsByTime = function(list){ return list; };
+  }
+})();
+
 /* UI with global-only TZ dropdown (fixed-position), pagination (10/page), sorting, label chips. */
 const $ = (id) => document.getElementById(id);
 
@@ -434,21 +457,74 @@ function applyJobColumnFilters(list){
 function currentFilterChips(){
   const f = state.filters || {}; const chips = [];
   Object.entries(f).forEach(([k,v]) => { if (v!=null && String(v).trim()!=='') chips.push({key:k, value:String(v).trim()}); });
+  // Add TimeRange chip
+  try {
+    if (window.TimeRange && window.TimeRange.enabled) {
+      const label = (typeof fmtRangeLabel==='function' ? fmtRangeLabel() : 'Time filter');
+      chips.unshift({key:'timerange', value: label});
+    }
+  } catch(e){}
   return chips;
 }
 function renderFilterChips(){
+    // Guard: TimeRange module may load later in the bundle
+  if (typeof window.TimeRange === 'undefined') { return; }
+// TimeRange chip
+  const chipsWrap = document.getElementById('jobs-chips');
+  if (chipsWrap){
+    const existing = document.getElementById('chip-timerange');
+    if (existing) existing.remove();
+    if (window.TimeRange.enabled){
+      const span = document.createElement('span');
+      span.id = 'chip-timerange';
+      span.className = 'chip bg-slate-200 flex items-center gap-1';
+      span.style.cursor = 'default';
+
+      const label = document.createElement('span');
+      label.textContent =  (typeof fmtRangeLabel==='function' ? fmtRangeLabel() : 'Time filter');
+      span.appendChild(label);
+
+      const close = document.createElement('button');
+      close.textContent = '×';
+      close.className = 'ml-1 w-4 h-4 flex items-center justify-center rounded-full text-slate-600 hover:bg-slate-400 hover:text-white';
+      close.style.cursor = 'pointer';
+      close.onclick = (e) => {
+        e.stopPropagation();
+        window.TimeRange.enabled = false;
+        if (typeof refreshJobs === 'function') refreshJobs();
+        span.remove();
+      };
+      span.appendChild(close);
+
+      chipsWrap.appendChild(span);
+    }
+  }
+
   const host = $("jobs-chips"); if (!host) return;
   const chips = currentFilterChips();
   if (!chips.length){ host.innerHTML=''; return; }
-  host.innerHTML = chips.map(c => (
-    `<span class="chip bg-slate-200 inline-flex items-center gap-1">
+  host.innerHTML = chips.map(c => {
+    if (c.key === 'timerange') {
+      return `<span class="chip bg-slate-200 inline-flex items-center gap-1">
+        <span class="text-xs"><strong>${c.value}</strong></span>
+        <button data-chip="${c.key}" class="ml-1 text-xs px-1 rounded bg-slate-300">×</button>
+      </span>`;
+    }
+    return `<span class="chip bg-slate-200 inline-flex items-center gap-1">
        <span class="text-xs">${c.key}: <strong>${c.value}</strong></span>
        <button data-chip="${c.key}" class="ml-1 text-xs px-1 rounded bg-slate-300">×</button>
-     </span>`
-  )).join(" ");
+     </span>`;
+  }).join(" ");
   host.querySelectorAll('button[data-chip]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const k = btn.dataset.chip; state.filters[k]=''; const el=$('f-'+k); if(el){ if(el.tagName==='SELECT') el.value=''; else el.value=''; }
+      const k = btn.dataset.chip;
+      if (k === 'timerange') {
+        if (window.TimeRange) window.TimeRange.enabled = false;
+      } else {
+        state.filters[k] = '';
+        const el = document.getElementById('f-'+k);
+        if (el){ if(el.tagName==='SELECT') el.value=''; else el.value=''; }
+      }
       state.page=1; renderJobs(state.jobs);
     });
   });
@@ -484,30 +560,35 @@ const TimeRange = {
 };
 
 function fmtRangeLabel(now = Date.now()) {
-  if (!TimeRange.enabled) return 'All time';
-  if (TimeRange.mode === 'relative') {
-    const mins = TimeRange.relMins;
-    if (mins % (24*60) === 0) return `Last ${mins/(24*60)}d`;
-    if (mins % 60 === 0) return `Last ${mins/60}h`;
-    return `Last ${mins}m`;
+  const fieldLabel = (window.TimeRange.field === 'created_at') ? 'Created' : 'Updated';
+  if (!window.TimeRange.enabled) return `${fieldLabel}: All time`;
+  if (window.TimeRange.mode === 'relative') {
+    const mins = window.TimeRange.relMins;
+    let rangeText = '';
+    if (mins % (24*60) === 0) rangeText = `Last ${mins/(24*60)}d`;
+    else if (mins % 60 === 0) rangeText = `Last ${mins/60}h`;
+    else rangeText = `Last ${mins}m`;
+    return `${fieldLabel} in ${rangeText}`;
   } else {
     const f = (ms) => new Date(ms).toLocaleString();
-    const { fromMs, toMs } = TimeRange.abs;
-    return `${fromMs?f(fromMs):'–'} → ${toMs?f(toMs):'Now'}`;
+    const { fromMs, toMs } = window.TimeRange.abs;
+    const fromText = fromMs ? f(fromMs) : '–';
+    const toText = toMs ? f(toMs) : 'Now';
+    return `${fieldLabel} from ${fromText} → ${toText}`;
   }
 }
 
 function filterJobsByTime(jobs){
-  if (!TimeRange.enabled) return jobs;
+  if (!window.TimeRange.enabled) return jobs;
   let from=null, to=null;
-  if (TimeRange.mode === 'relative') {
+  if (window.TimeRange.mode === 'relative') {
     to = Date.now();
-    from = to - TimeRange.relMins * 60 * 1000;
+    from = to - window.TimeRange.relMins * 60 * 1000;
   } else {
-    from = TimeRange.abs?.fromMs ?? null;
-    to   = TimeRange.abs?.toMs ?? null;
+    from = window.TimeRange.abs?.fromMs ?? null;
+    to   = window.TimeRange.abs?.toMs ?? null;
   }
-  const field = TimeRange.field || 'updated_at';
+  const field = window.TimeRange.field || 'updated_at';
 
   const pass = [];
   for (let i=0;i<jobs.length;i++){
@@ -521,7 +602,7 @@ function filterJobsByTime(jobs){
 
   if (window.__timeDebug){
     const fmt = (ms) => ms==null ? 'null' : (new Date(ms)).toString();
-    console.log('[TimeRange] mode=', TimeRange.mode, 'field=', field, 'from=', fmt(from), 'to=', fmt(to), 'kept=', pass.length, 'of', jobs.length);
+    console.log('[TimeRange] mode=', window.TimeRange.mode, 'field=', field, 'from=', fmt(from), 'to=', fmt(to), 'kept=', pass.length, 'of', jobs.length);
     if (pass.length===0){
       const sample = jobs.slice(0,5).map(j=>({id:j.job_id, raw:j?.[field], ts: toTs(j?.[field])}));
       console.warn('[TimeRange] first5 parsed:', sample);
@@ -540,9 +621,9 @@ function initTimeRangeUI(){
 
   btn.addEventListener('click', () => {
     pop.classList.toggle('hidden');
-    if (TimeRange.mode === 'absolute' && TimeRange.abs.fromMs) {
-      fromInput.value = new Date(TimeRange.abs.fromMs).toISOString().slice(0,16);
-      toInput.value = new Date(TimeRange.abs.toMs || Date.now()).toISOString().slice(0,16);
+    if (window.TimeRange.mode === 'absolute' && window.TimeRange.abs.fromMs) {
+      fromInput.value = new Date(window.TimeRange.abs.fromMs).toISOString().slice(0,16);
+      toInput.value = new Date(window.TimeRange.abs.toMs || Date.now()).toISOString().slice(0,16);
     } else {
       const to = new Date(); const from = new Date(Date.now() - 24*60*60*1000);
       toInput.value = to.toISOString().slice(0,16); fromInput.value = from.toISOString().slice(0,16);
@@ -559,50 +640,50 @@ function initTimeRangeUI(){
       const yest = t.hasAttribute('data-yesterday');
 
       if (minsAttr) {
-        TimeRange.mode='relative'; TimeRange.relMins=parseInt(minsAttr,10); TimeRange.enabled=true;
+        window.TimeRange.mode='relative'; window.TimeRange.relMins=parseInt(minsAttr,10); window.TimeRange.enabled=true;
       } else if (today) {
         const now = new Date();
         const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
         const end = start + 24*60*60*1000 - 1;
-        TimeRange.mode='absolute'; TimeRange.enabled=true; TimeRange.abs={fromMs:start,toMs:end};
+        window.TimeRange.mode='absolute'; window.TimeRange.enabled=true; window.TimeRange.abs={fromMs:start,toMs:end};
       } else if (yest) {
         const now = new Date();
         const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - 24*60*60*1000;
         const end = start + 24*60*60*1000 - 1;
-        TimeRange.mode='absolute'; TimeRange.enabled=true; TimeRange.abs={fromMs:start,toMs:end};
+        window.TimeRange.mode='absolute'; window.TimeRange.enabled=true; window.TimeRange.abs={fromMs:start,toMs:end};
       }
 
       const selectedField = document.querySelector('input[name="tr-field"]:checked')?.value || 'updated_at';
-      TimeRange.field = selectedField;
-      label.textContent = fmtRangeLabel();
+      window.TimeRange.field = selectedField;
+      label.textContent =  (typeof fmtRangeLabel==='function' ? fmtRangeLabel() : 'Time filter');
       if (typeof refreshJobs === 'function') refreshJobs();
       pop.classList.add('hidden');
     });
   });
   document.querySelectorAll('input[name="tr-field"]').forEach(r => {
     r.addEventListener('change', () => {
-      TimeRange.field = r.value; label.textContent = fmtRangeLabel();
+      window.TimeRange.field = r.value; label.textContent =  (typeof fmtRangeLabel==='function' ? fmtRangeLabel() : 'Time filter');
       if (typeof refreshJobs === 'function') refreshJobs();
     });
   });
   const clearBtn = document.getElementById('tr-clear');
   const cancelBtn = document.getElementById('tr-cancel');
   const applyBtn = document.getElementById('tr-apply');
-  clearBtn?.addEventListener('click', () => { TimeRange.enabled=false; label.textContent='All time'; if (typeof refreshJobs==='function') refreshJobs(); });
+  clearBtn?.addEventListener('click', () => { window.TimeRange.enabled=false; label.textContent='All time'; if (typeof refreshJobs==='function') refreshJobs(); });
   cancelBtn?.addEventListener('click', () => pop.classList.add('hidden'));
   applyBtn?.addEventListener('click', () => {
     const f = fromInput.value ? Date.parse(fromInput.value) : null;
     const t = toInput.value ? Date.parse(toInput.value) : null;
     const { fromMs, toMs } = clampAbs(f, t);
-    TimeRange.mode='absolute'; TimeRange.enabled=true; TimeRange.abs={fromMs, toMs};
+    window.TimeRange.mode='absolute'; window.TimeRange.enabled=true; window.TimeRange.abs={fromMs, toMs};
     const selectedField = document.querySelector('input[name="tr-field"]:checked')?.value || 'updated_at';
-    TimeRange.field = selectedField;
-    label.textContent = fmtRangeLabel();
+    window.TimeRange.field = selectedField;
+    label.textContent =  (typeof fmtRangeLabel==='function' ? fmtRangeLabel() : 'Time filter');
     if (typeof refreshJobs === 'function') refreshJobs();
     pop.classList.add('hidden');
   });
 
-  label.textContent = fmtRangeLabel();
+  label.textContent =  (typeof fmtRangeLabel==='function' ? fmtRangeLabel() : 'Time filter');
 }
 
 document.addEventListener('DOMContentLoaded', initTimeRangeUI);
@@ -705,8 +786,8 @@ function toTs(v){
 }
 
 function jobInTimeRange(job){
-  if (!TimeRange.enabled) return true;
-  const field = TimeRange.field || 'updated_at';
+  if (!window.TimeRange.enabled) return true;
+  const field = window.TimeRange.field || 'updated_at';
   const v = job[field];
   const t = toTs(v);
   if (isNaN(t)) {
@@ -714,14 +795,14 @@ function jobInTimeRange(job){
     console.debug('Job excluded due to invalid timestamp:', job.job_id, field, v);
     return false;
   }
-  if (TimeRange.mode === 'relative') {
+  if (window.TimeRange.mode === 'relative') {
     const to = Date.now();
-    const from = to - TimeRange.relMins * 60 * 1000;
+    const from = to - window.TimeRange.relMins * 60 * 1000;
     // Debug: log time range and job timestamp
     //console.debug('Checking job', job.job_id, 't:', t, 'from:', from, 'to:', to);
     return t >= from && t <= to;
   } else {
-    const { fromMs, toMs } = TimeRange.abs;
+    const { fromMs, toMs } = window.TimeRange.abs;
     if (fromMs && t < fromMs) return false;
     if (toMs && t > toMs) return false;
     return true;

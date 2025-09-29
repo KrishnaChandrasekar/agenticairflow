@@ -9,3 +9,96 @@
 /* Time Range control */
 #tr-pop button:focus { outline: 2px solid rgba(37,99,235,.4); outline-offset: 2px; }
 #tr-pop .tr-q { font-size: 12px; }
+
+/* theme-roboto-global */
+html,
+body,
+*,
+*::before,
+*::after {
+    font-family: "Roboto", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji" !important;
+}
+
+/* theme-blue-fit25 */
+:root {
+    --blue1: #0d2b4f;
+    /* header dark */
+    --blue2: #12365e;
+    /* filter row */
+    --blueText: #ffffff;
+    --muted: #c9d6e7;
+    --row-h: 34px;
+    /* approximate row height used for fit calc */
+}
+
+/* Sticky header + filter row */
+table thead.sticky,
+table thead.sticky tr:first-child {
+    background: var(--blue1) !important;
+    color: var(--blueText) !important;
+}
+
+table thead.sticky th {
+    color: var(--blueText) !important;
+    font-weight: 600;
+}
+
+table thead.sticky tr+tr th {
+    background: var(--blue2) !important;
+}
+
+table thead.sticky input,
+table thead.sticky select {
+    background: var(--blue2);
+    color: var(--blueText);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    outline: none;
+}
+
+table thead.sticky input::placeholder {
+    color: var(--muted);
+}
+
+/* Slightly denser rows so 25 fit comfortably */
+table tbody td,
+table tbody th {
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+/* Chips contrast tweak on dark header theme */
+#jobs-chips .chip {
+    background: #e6effa;
+    color: #0d2b4f;
+    border: 1px solid #d4e2f6;
+}
+
+/* jobs-wide-nowrap */
+#jobs-table {
+    min-width: 1400px;
+}
+
+#jobs-table th:first-child,
+#jobs-table td:first-child {
+    white-space: nowrap;
+}
+
+#jobs-table td,
+#jobs-table th {
+    word-break: normal;
+}
+
+/* rc-col-narrow */
+#jobs-table th:nth-child(4),
+#jobs-table td:nth-child(4) {
+    width: 6ch;
+    max-width: 6ch;
+    text-align: center;
+    white-space: nowrap;
+}
+
+/* Make the RC filter input compact too */
+#jobs-table thead #f-rc {
+    width: 6ch !important;
+    min-width: 6ch;
+}
