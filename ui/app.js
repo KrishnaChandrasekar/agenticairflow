@@ -455,6 +455,50 @@ async function submitTestJob(){
     const text = await r.text();
     if(out) out.textContent = text;
     refreshAll();
+    // Try to extract job_id from response (robust)
+    let jobId = "";
+    try {
+      // Try JSON parse first
+      const jobObj = JSON.parse(text);
+      if (jobObj && jobObj.job_id) jobId = jobObj.job_id;
+      else if (jobObj && jobObj.id) jobId = jobObj.id;
+    } catch {
+      // Fallback to regex
+      const jobMatch = text.match(/job_id\s*[:=]\s*['\"]?(\w+)["']?/i);
+      if (jobMatch) jobId = jobMatch[1];
+    }
+    // If jobId found, start polling for status
+    if (jobId) {
+      let pollCount = 0;
+      let lastStatus = "RUNNING";
+      const pollStatus = async () => {
+        pollCount++;
+        try {
+          const statusResp = await fetch(`${BASE}/status/${jobId}`);
+          const statusData = await statusResp.json();
+          // Update job in state.jobs
+          let updated = false;
+          state.jobs = (state.jobs||[]).map(j => {
+            if (String(j.job_id) === String(jobId)) {
+              if (j.status !== statusData.status) updated = true;
+              lastStatus = statusData.status;
+              return { ...j, status: statusData.status, rc: statusData.rc, updated_at: statusData.updated_at };
+            }
+            return j;
+          });
+          if (updated) renderJobs(state.jobs);
+          if (lastStatus === "RUNNING" && pollCount < 60) {
+            setTimeout(pollStatus, 2000); // poll every 2s, max 2min
+          } else {
+            renderJobs(state.jobs);
+          }
+        } catch {
+          // If error, try again up to max pollCount
+          if (pollCount < 60) setTimeout(pollStatus, 2000);
+        }
+      };
+      pollStatus();
+    }
   }catch(e){ if(out) out.textContent = "error: "+e.message; }
 }
 $("tj-send")?.addEventListener("click", submitTestJob);
