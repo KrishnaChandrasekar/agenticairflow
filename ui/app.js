@@ -698,6 +698,9 @@ function renderFilterChips(){
       close.onclick = (e) => {
         e.stopPropagation();
         window.TimeRange.enabled = false;
+        // Update the Kibana-like filter dropdown label to 'All Time'
+        const trLabel = document.getElementById('tr-label');
+        if (trLabel) trLabel.textContent = (typeof fmtRangeLabel==='function' ? fmtRangeLabel() : 'Updated: All time');
         if (typeof refreshJobs === 'function') refreshJobs();
         span.remove();
       };
@@ -727,6 +730,9 @@ function renderFilterChips(){
       const k = btn.dataset.chip;
       if (k === 'timerange') {
         if (window.TimeRange) window.TimeRange.enabled = false;
+        // Also update the Kibana-like filter dropdown label to 'All Time'
+        const trLabel = document.getElementById('tr-label');
+        if (trLabel) trLabel.textContent = (typeof fmtRangeLabel==='function' ? fmtRangeLabel() : 'Updated: All time');
       } else {
         state.filters[k] = '';
         const el = document.getElementById('f-'+k);
