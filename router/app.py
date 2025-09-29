@@ -124,6 +124,21 @@ def _coerce_json(value, default):
 # -----------------------------
 # Endpoints
 # -----------------------------
+@app.post("/agents/deregister")
+def agents_deregister():
+    if not auth_ok(request):
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True) or {}
+    agent_id = (data.get("agent_id") or "").strip()
+    if not agent_id:
+        return jsonify({"error": "agent_id required"}), 400
+    with Session() as s:
+        a = s.get(Agent, agent_id)
+        if not a:
+            return jsonify({"error": "agent not found"}), 404
+        a.active = False
+        s.commit()
+    return jsonify({"ok": True, "agent_id": agent_id})
 @app.get("/health")
 def health():
     return jsonify({"ok": True, "db": True})
