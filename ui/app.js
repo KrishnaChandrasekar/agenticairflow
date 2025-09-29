@@ -192,15 +192,14 @@ async function fetchAgents(){ const j = await fetchJSON(`${BASE}/agents`); retur
 async function fetchJobs(){
   const j = await fetchJSON(`${BASE}/jobs?limit=1000`);
   const arr = Array.isArray(j) ? j : (j.jobs || []);
+  let testJobIds = [];
+  try { testJobIds = JSON.parse(localStorage.getItem("testJobIds") || "[]"); } catch {}
   return arr.map(x => {
     const job_id = x.job_id || x.id || "";
     let labels = x.labels || {};
-    // If job_id matches a test job (heuristic: job_id in state.jobs and has job-type: test), force label
-    if (state.jobs) {
-      const localJob = state.jobs.find(j => j.job_id === job_id && j.labels && j.labels["job-type"] === "test");
-      if (localJob) {
-        labels = { ...labels, "job-type": "test" };
-      }
+    // If job_id matches a test job (persisted), force label
+    if (testJobIds.includes(job_id)) {
+      labels = { ...labels, "job-type": "test" };
     }
     return {
       job_id,
@@ -463,6 +462,9 @@ async function submitTestJob(){
   const agent = $("tj-agent")?.value.trim() || "";
   let labels = {}; try { labels = JSON.parse(($("tj-labels")?.value || "{}")); } catch {}
   labels["job-type"] = "test";
+  // Persist test job id in localStorage
+  let testJobIds = [];
+  try { testJobIds = JSON.parse(localStorage.getItem("testJobIds") || "[]"); } catch {}
   // Only use labels for routing that are not 'job-type'
   const routingLabels = { ...labels };
   delete routingLabels["job-type"];
@@ -486,8 +488,12 @@ async function submitTestJob(){
       const jobMatch = text.match(/job_id\s*[:=]\s*['\"]?(\w+)["']?/i);
       if (jobMatch) jobId = jobMatch[1];
     }
-    // If jobId found, start polling for status
+    // If jobId found, store in localStorage and start polling for status
     if (jobId) {
+      if (!testJobIds.includes(jobId)) {
+        testJobIds.push(jobId);
+        localStorage.setItem("testJobIds", JSON.stringify(testJobIds));
+      }
       let pollCount = 0;
       let lastStatus = "RUNNING";
       const pollStatus = async () => {
