@@ -474,9 +474,34 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
   $("job-filter")?.addEventListener("input", () => { state.page = 1; renderJobs(state.jobs); });
   $("byagent-status")?.addEventListener("change", () => renderByAgent(state.jobs));
   $("byagent-filter")?.addEventListener("input", () => renderByAgent(state.jobs));
-  const ar=$("autorefresh"); const schedule=()=>{ if (state.jobTimer) clearInterval(state.jobTimer); state.jobTimer=setInterval(refreshAll, 2000); };
+  const ar = $("autorefresh");
+  const manualRefreshBtn = $("manual-refresh");
+  const setManualRefreshState = () => {
+    if (ar?.checked) {
+      manualRefreshBtn.disabled = true;
+      manualRefreshBtn.classList.add("opacity-50", "cursor-not-allowed");
+    } else {
+      manualRefreshBtn.disabled = false;
+      manualRefreshBtn.classList.remove("opacity-50", "cursor-not-allowed");
+    }
+  };
+  const schedule = () => {
+    if (state.jobTimer) clearInterval(state.jobTimer);
+    state.jobTimer = setInterval(refreshAll, 2000);
+  };
   if (!ar || ar.checked) schedule();
-  ar?.addEventListener("change", () => { if (ar.checked) schedule(); else { if (state.jobTimer) clearInterval(state.jobTimer); state.jobTimer=null; } });
+  setManualRefreshState();
+  ar?.addEventListener("change", () => {
+    if (ar.checked) schedule();
+    else {
+      if (state.jobTimer) clearInterval(state.jobTimer);
+      state.jobTimer = null;
+    }
+    setManualRefreshState();
+  });
+  manualRefreshBtn?.addEventListener("click", () => {
+    if (!manualRefreshBtn.disabled) refreshAll();
+  });
   refreshAll();
 })();
 function applyJobColumnFilters(list){
