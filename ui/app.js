@@ -577,6 +577,47 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
       refreshAll();
     }
   });
+  // --- Submit Test Job button enable/disable logic ---
+  const tjAgent = $("tj-agent");
+  const tjSend = $("tj-send");
+  function updateSubmitButtonState() {
+    if (!tjAgent || !tjSend) return;
+    const selectedId = tjAgent.value.trim();
+    if (!selectedId) {
+      tjSend.disabled = false;
+      tjSend.classList.remove("opacity-50", "cursor-not-allowed");
+      return;
+    }
+    const agent = (state.agents||[]).find(a => a.agent_id === selectedId);
+    let status = "Offline";
+    if (agent) {
+      const lastHbMs = typeof toTs === 'function' ? toTs(agent.last_heartbeat) : (agent.last_heartbeat ? new Date(agent.last_heartbeat).getTime() : 0);
+      const nowMs = Date.now();
+      const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000;
+      if (agent.active && lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
+        status = "Registered";
+      } else if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
+        status = "Discovered";
+      } else {
+        status = "Offline";
+      }
+    }
+    if (status === "Registered") {
+      tjSend.disabled = false;
+      tjSend.classList.remove("opacity-50", "cursor-not-allowed");
+    } else {
+      tjSend.disabled = true;
+      tjSend.classList.add("opacity-50", "cursor-not-allowed");
+    }
+  }
+  tjAgent?.addEventListener("change", updateSubmitButtonState);
+  // Also update on refreshAll (agents list changes)
+  const origRefreshAll = refreshAll;
+  window.refreshAll = async function() {
+    await origRefreshAll.apply(this, arguments);
+    updateSubmitButtonState();
+  };
+  updateSubmitButtonState();
   refreshAll();
 })();
 function applyJobColumnFilters(list){
