@@ -18,7 +18,7 @@ button:hover svg {
 
 /* Submit button darker effect */
 #tj-send:hover {
-    background-color: #059669 !important; /* Tailwind emerald-700 */
+    background-color: #03714f !important; /* Tailwind emerald-700 */
 }
 #tj-send:active {
     background-color: #065f46 !important; /* Tailwind emerald-900 */
