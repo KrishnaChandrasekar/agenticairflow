@@ -374,10 +374,25 @@ async function renderAgentsDetailAndOpen(){
     } catch { counts[a.agent_id] = 0; }
   }));
   const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+  function robustParseTs(ts) {
+    if (!ts) return 0;
+    // Try native Date.parse first
+    let ms = Date.parse(ts);
+    if (!isNaN(ms)) return ms;
+    // Try replacing space with T and appending Z
+    if (/^\d{4}-\d{2}-\d{2} /.test(ts)) {
+      ms = Date.parse(ts.replace(' ', 'T') + 'Z');
+      if (!isNaN(ms)) return ms;
+    }
+    // Try removing fractional seconds
+    ms = Date.parse(ts.replace(/\.(\d+)(Z|[+\-]\d{2}:?\d{2})$/, '$2'));
+    if (!isNaN(ms)) return ms;
+    return 0;
+  }
   body.innerHTML = state.agents.map(a => {
     const labels = Object.entries(a.labels||{}).map(([k,v]) => `<span class=\"chip bg-slate-100\">${k}:${v}</span>`).join(" ");
     let status = "Offline";
-  let lastHbMs = toTs(a.last_heartbeat);
+    let lastHbMs = robustParseTs(a.last_heartbeat);
     let nowMs = Date.now();
     if (a.active && lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
       status = "Registered";
@@ -446,13 +461,7 @@ async function refreshAll(){
     hideError();
     const [agents, jobs] = await Promise.all([fetchAgents(), fetchJobs()]);
     state.agents = agents; state.jobs = jobs;
-    const sel = $("tj-agent");
-    if (sel) {
-      const prev = sel.value;
-      sel.innerHTML = `<option value="">(Any agent via labels)</option>` + agents.map(a => `<option value="${a.agent_id}">${a.agent_id}</option>`).join("");
-      // Restore previous selection if still present
-      if (prev && agents.some(a => a.agent_id === prev)) sel.value = prev;
-    }
+    const sel=$("tj-agent"); if (sel) sel.innerHTML = `<option value="">(Any agent via labels)</option>` + agents.map(a => `<option value="${a.agent_id}">${a.agent_id}</option>`).join("");
     renderAgents(agents); renderJobs(jobs); renderByAgent(jobs);
   }catch(e){ console.error(e); showError(e.message); }
 }

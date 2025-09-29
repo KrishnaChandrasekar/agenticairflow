@@ -1,77 +1,19 @@
 <!doctype html>
 <html lang="en">
+
 <head>
-    <link rel="stylesheet" href="styles.css"/>
-<meta charset="utf-8"/>
+  <link rel="stylesheet" href="styles.css" />
+  <meta charset="utf-8" />
   <title>Router Monitoring Console</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.tailwindcss.com"></script>
-  
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
 
-  <style id="theme-roboto-global">
-    html, body, *, *::before, *::after {
-      font-family: "Roboto", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji" !important;
-    }
-  </style>
-
-
-  <style id="theme-blue-fit25">
-    :root{
-      --blue1:#0d2b4f;   /* header dark */
-      --blue2:#12365e;   /* filter row */
-      --blueText:#ffffff;
-      --muted:#c9d6e7;
-      --row-h: 34px;     /* approximate row height used for fit calc */
-    }
-    /* Sticky header + filter row */
-    table thead.sticky, table thead.sticky tr:first-child { background: var(--blue1) !important; color: var(--blueText) !important; }
-    table thead.sticky th { color: var(--blueText) !important; font-weight: 600; }
-    table thead.sticky tr + tr th { background: var(--blue2) !important; }
-    table thead.sticky input,
-    table thead.sticky select {
-      background: var(--blue2); color: var(--blueText);
-      border: 1px solid rgba(255,255,255,0.18);
-      outline: none;
-    }
-    table thead.sticky input::placeholder { color: var(--muted); }
-
-    /* Slightly denser rows so 25 fit comfortably */
-    table tbody td, table tbody th { padding-top: 6px; padding-bottom: 6px; }
-
-    /* Chips contrast tweak on dark header theme */
-    #jobs-chips .chip{ background:#e6effa; color:#0d2b4f; border:1px solid #d4e2f6; }
-  </style>
-
-
-  <style id="jobs-wide-nowrap">
-    /* Ensure Jobs table is wide enough and Job ID never wraps */
-    #jobs-table{ min-width: 1400px; }
-    #jobs-table th:first-child,
-    #jobs-table td:first-child{ white-space: nowrap; }
-    #jobs-table td, #jobs-table th{ word-break: normal; }
-  </style>
-
-
-  <style id="rc-col-narrow">
-    /* Narrow RC column (4th col) for Jobs table */
-    #jobs-table th:nth-child(4),
-    #jobs-table td:nth-child(4){
-      width: 6ch;
-      max-width: 6ch;
-      text-align: center;
-      white-space: nowrap;
-    }
-    /* Make the RC filter input compact too */
-    #jobs-table thead #f-rc{
-      width: 6ch !important;
-      min-width: 6ch;
-    }
-  </style>
-
 </head>
+
 <body class="bg-slate-50 text-slate-800">
   <div class="max-w-screen-2xl mx-auto p-4 space-y-4">
 
@@ -85,8 +27,7 @@
             <span class="text-xs">▼</span>
           </button>
           <!-- Use fixed so it never gets clipped by overflow containers -->
-          <div id="tz-menu"
-               class="hidden fixed z-50 mt-1 w-72 max-h-72 overflow-auto bg-white border rounded shadow">
+          <div id="tz-menu" class="hidden fixed z-50 mt-1 w-72 max-h-72 overflow-auto bg-white border rounded shadow">
             <!-- populated by JS -->
           </div>
         </div>
@@ -104,8 +45,8 @@
           <div class="flex items-center justify-between">
             <h2 class="font-semibold">Jobs</h2>
             <div class="flex items-center gap-3">
-              <input id="job-filter" class="border rounded px-2 py-1" placeholder="Filter: job/agent/status"/>
-              
+              <input id="job-filter" class="border rounded px-2 py-1" placeholder="Filter: job/agent/status" />
+
               <!-- Time Range (Kibana-like) -->
               <div class="relative" id="tr-wrap">
                 <button id="tr-btn" class="border rounded px-3 py-1 flex items-center gap-2">
@@ -114,7 +55,8 @@
                 </button>
 
                 <!-- Popover -->
-                <div id="tr-pop" class="hidden absolute right-0 z-50 mt-1 w-[28rem] bg-white border rounded shadow p-3 space-y-3">
+                <div id="tr-pop"
+                  class="hidden absolute right-0 z-50 mt-1 w-[28rem] bg-white border rounded shadow p-3 space-y-3">
                   <div class="text-sm">
                     <div class="font-medium mb-1">Time field</div>
                     <label class="mr-2"><input type="radio" name="tr-field" value="updated_at" checked> Updated</label>
@@ -159,7 +101,7 @@
                 </div>
               </div>
 
-<label class="text-sm flex items-center gap-1">
+              <label class="text-sm flex items-center gap-1">
                 <input id="autorefresh" type="checkbox" class="accent-blue-600" checked /> Auto
               </label>
             </div>
@@ -174,7 +116,7 @@
                 <option>50</option>
                 <option>100</option>
                 <option>200</option>
-    </select>
+              </select>
             </div>
             <div class="flex items-center gap-3 text-sm">
               <span id="page-info" class="text-slate-600">–</span>
@@ -190,18 +132,25 @@
           <table id="jobs-table" class="w-full text-sm">
             <thead class="sticky top-0 bg-slate-100">
               <tr>
-                <th class="text-left p-2 cursor-pointer" data-sort="job_id">Job ID <span class="text-xs" id="sort-job_id"></span></th>
-                <th class="text-left p-2 cursor-pointer" data-sort="status">Status <span class="text-xs" id="sort-status"></span></th>
-                <th class="text-left p-2 cursor-pointer" data-sort="agent_id">Agent <span class="text-xs" id="sort-agent_id"></span></th>
-                <th class="text-left p-2 cursor-pointer" data-sort="rc">RC <span class="text-xs" id="sort-rc"></span></th>
-                <th class="text-left p-2 cursor-pointer" data-sort="created_at">Created <span class="text-xs" id="sort-created_at"></span></th>
-                <th class="text-left p-2 cursor-pointer" data-sort="updated_at">Updated <span class="text-xs" id="sort-updated_at"></span></th>
+                <th class="text-left p-2 cursor-pointer" data-sort="job_id">Job ID <span class="text-xs"
+                    id="sort-job_id"></span></th>
+                <th class="text-left p-2 cursor-pointer" data-sort="status">Status <span class="text-xs"
+                    id="sort-status"></span></th>
+                <th class="text-left p-2 cursor-pointer" data-sort="agent_id">Agent <span class="text-xs"
+                    id="sort-agent_id"></span></th>
+                <th class="text-left p-2 cursor-pointer" data-sort="rc">RC <span class="text-xs" id="sort-rc"></span>
+                </th>
+                <th class="text-left p-2 cursor-pointer" data-sort="created_at">Created <span class="text-xs"
+                    id="sort-created_at"></span></th>
+                <th class="text-left p-2 cursor-pointer" data-sort="updated_at">Updated <span class="text-xs"
+                    id="sort-updated_at"></span></th>
                 <th class="text-left p-2">Labels</th>
                 <th class="text-left p-2"></th>
               </tr>
-            
+
               <tr>
-                <th class="p-2"><input id="f-job_id" class="border rounded px-2 py-1 w-full" placeholder="Filter job id"/></th>
+                <th class="p-2"><input id="f-job_id" class="border rounded px-2 py-1 w-full"
+                    placeholder="Filter job id" /></th>
                 <th class="p-2">
                   <select id="f-status" class="border rounded px-2 py-1 w-full">
                     <option value=""></option>
@@ -211,12 +160,17 @@
                     <option>FAILED</option>
                   </select>
                 </th>
-                <th class="p-2"><input id="f-agent_id" class="border rounded px-2 py-1 w-full" placeholder="Filter agent"/></th>
-                <th class="p-2"><input id="f-rc" class="border rounded px-2 py-1 w-full" placeholder="e.g. 0"/></th>
-                <th class="p-2"><input id="f-created_at" class="border rounded px-2 py-1 w-full" placeholder="Filter date/time"/></th>
-                <th class="p-2"><input id="f-updated_at" class="border rounded px-2 py-1 w-full" placeholder="Filter date/time"/></th>
-                <th class="p-2"><input id="f-labels" class="border rounded px-2 py-1 w-full" placeholder='key or "k:v"'/></th>
-                <th class="p-2"><button id="f-clear-all" class="text-xs border rounded px-2 py-1">Clear all</button></th>
+                <th class="p-2"><input id="f-agent_id" class="border rounded px-2 py-1 w-full"
+                    placeholder="Filter agent" /></th>
+                <th class="p-2"><input id="f-rc" class="border rounded px-2 py-1 w-full" placeholder="e.g. 0" /></th>
+                <th class="p-2"><input id="f-created_at" class="border rounded px-2 py-1 w-full"
+                    placeholder="Filter date/time" /></th>
+                <th class="p-2"><input id="f-updated_at" class="border rounded px-2 py-1 w-full"
+                    placeholder="Filter date/time" /></th>
+                <th class="p-2"><input id="f-labels" class="border rounded px-2 py-1 w-full"
+                    placeholder='key or "k:v"' /></th>
+                <th class="p-2"><button id="f-clear-all" class="text-xs border rounded px-2 py-1">Clear all</button>
+                </th>
               </tr>
 
             </thead>
@@ -246,7 +200,7 @@
       </div>
     </dialog>
 
-    
+
     <!-- Submit Test Job dialog -->
     <dialog id="submit-dialog" class="w-full max-w-xl rounded-2xl shadow-lg">
       <div class="p-4 space-y-3">
@@ -258,10 +212,12 @@
           <select id="tj-agent" class="border rounded px-2 py-1 w-full">
             <option value="">(Any agent via labels)</option>
           </select>
-          <input id="tj-command" class="border rounded px-2 py-1 w-full" value="echo HELLO && sleep 2 && echo DONE"/>
-          <textarea id="tj-labels" class="border rounded px-2 py-1 w-full" rows="3" placeholder='{} (or {"os":"linux"})'></textarea>
+          <input id="tj-command" class="border rounded px-2 py-1 w-full" value="echo HELLO && sleep 2 && echo DONE" />
+          <textarea id="tj-labels" class="border rounded px-2 py-1 w-full" rows="3"
+            placeholder='{} (or {"os":"linux"})'></textarea>
           <div class="flex items-center gap-2">
-            <button id="tj-send" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded">Submit</button>
+            <button id="tj-send"
+              class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded">Submit</button>
             <span class="text-xs text-slate-500">Submit runs on the selected agent (or via labels if left blank).</span>
           </div>
           <pre id="tj-out" class="text-xs bg-slate-50 p-2 rounded overflow-auto h-24"></pre>
@@ -269,7 +225,7 @@
       </div>
     </dialog>
 
-<!-- Agents dialog -->
+    <!-- Agents dialog -->
     <dialog id="agents-dialog" class="w-full max-w-4xl rounded-2xl shadow-lg">
       <div class="p-4 space-y-3">
         <div class="flex justify-between items-center">
@@ -283,7 +239,7 @@
                 <th class="text-left p-2">Agent</th>
                 <th class="text-left p-2">URL</th>
                 <th class="text-left p-2">Labels</th>
-                <th class="text-left p-2">Active</th>
+                <th class="text-left p-2">Status</th>
                 <th class="text-left p-2">Heartbeat</th>
                 <th class="text-left p-2">Jobs (24h)</th>
               </tr>
@@ -299,4 +255,5 @@
   <script src="config.js" defer></script>
   <script src="app.js" defer></script>
 </body>
+
 </html>
