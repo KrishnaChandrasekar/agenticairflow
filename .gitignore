@@ -66,5 +66,6 @@ ui/.DS_Store
 airflow/.DS_Store
 airflow/dags/.DS_Store
 airflow/plugins/.DS_Store
-agentic-mvp/.DS_Store
+.DS_Store
 router/.DS_Store
+
