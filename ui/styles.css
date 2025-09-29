@@ -1,0 +1,11 @@
+/* Moved from index.html */
+.chip{border-radius:9999px;padding:2px 8px;font-size:12px}
+    .st-QUEUED{background:#eef;color:#334}
+    .st-RUNNING{background:#eaf7ff;color:#045}
+    .st-SUCCEEDED{background:#e9f8ef;color:#064}
+    .st-FAILED{background:#fee;color:#600}
+    dialog::backdrop{background:rgba(0,0,0,.25)}
+
+/* Time Range control */
+#tr-pop button:focus { outline: 2px solid rgba(37,99,235,.4); outline-offset: 2px; }
+#tr-pop .tr-q { font-size: 12px; }

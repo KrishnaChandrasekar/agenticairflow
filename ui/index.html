@@ -1,18 +1,12 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
+    <link rel="stylesheet" href="styles.css"/>
+<meta charset="utf-8"/>
   <title>Router Monitoring Console</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    .chip{border-radius:9999px;padding:2px 8px;font-size:12px}
-    .st-QUEUED{background:#eef;color:#334}
-    .st-RUNNING{background:#eaf7ff;color:#045}
-    .st-SUCCEEDED{background:#e9f8ef;color:#064}
-    .st-FAILED{background:#fee;color:#600}
-    dialog::backdrop{background:rgba(0,0,0,.25)}
-  </style>
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
@@ -111,7 +105,61 @@
             <h2 class="font-semibold">Jobs</h2>
             <div class="flex items-center gap-3">
               <input id="job-filter" class="border rounded px-2 py-1" placeholder="Filter: job/agent/status"/>
-              <label class="text-sm flex items-center gap-1">
+              
+              <!-- Time Range (Kibana-like) -->
+              <div class="relative" id="tr-wrap">
+                <button id="tr-btn" class="border rounded px-3 py-1 flex items-center gap-2">
+                  <span id="tr-label">Last 24 hours</span>
+                  <span class="text-xs">▼</span>
+                </button>
+
+                <!-- Popover -->
+                <div id="tr-pop" class="hidden absolute right-0 z-50 mt-1 w-[28rem] bg-white border rounded shadow p-3 space-y-3">
+                  <div class="text-sm">
+                    <div class="font-medium mb-1">Time field</div>
+                    <label class="mr-2"><input type="radio" name="tr-field" value="updated_at" checked> Updated</label>
+                    <label><input type="radio" name="tr-field" value="created_at"> Created</label>
+                  </div>
+
+                  <div class="text-sm">
+                    <div class="font-medium mb-1">Quick ranges</div>
+                    <div class="flex flex-wrap gap-2">
+                      <button class="tr-q border rounded px-2 py-1" data-mins="15">Last 15m</button>
+                      <button class="tr-q border rounded px-2 py-1" data-mins="60">Last 1h</button>
+                      <button class="tr-q border rounded px-2 py-1" data-mins="240">Last 4h</button>
+                      <button class="tr-q border rounded px-2 py-1" data-mins="1440">Last 24h</button>
+                      <button class="tr-q border rounded px-2 py-1" data-mins="10080">Last 7d</button>
+                      <button class="tr-q border rounded px-2 py-1" data-mins="43200">Last 30d</button>
+                      <button class="tr-q border rounded px-2 py-1" data-today="1">Today</button>
+                      <button class="tr-q border rounded px-2 py-1" data-yesterday="1">Yesterday</button>
+                    </div>
+                  </div>
+
+                  <div class="text-sm">
+                    <div class="font-medium mb-1">Absolute range</div>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div>
+                        <div class="text-xs text-slate-500 mb-1">From</div>
+                        <input id="tr-from" type="datetime-local" class="border rounded px-2 py-1 w-full">
+                      </div>
+                      <div>
+                        <div class="text-xs text-slate-500 mb-1">To</div>
+                        <input id="tr-to" type="datetime-local" class="border rounded px-2 py-1 w-full">
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center justify-between">
+                    <button id="tr-clear" class="text-xs border rounded px-2 py-1">Clear</button>
+                    <div class="flex items-center gap-2">
+                      <button id="tr-cancel" class="border rounded px-3 py-1">Cancel</button>
+                      <button id="tr-apply" class="bg-blue-600 text-white rounded px-3 py-1">Apply</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+<label class="text-sm flex items-center gap-1">
                 <input id="autorefresh" type="checkbox" class="accent-blue-600" checked /> Auto
               </label>
             </div>

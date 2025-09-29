@@ -236,6 +236,7 @@ function renderJobs(allJobs){
   const q = ($("job-filter")?.value || "").trim().toLowerCase();
   let list = allJobs.filter(j => !q || j.job_id?.toLowerCase().includes(q) || (j.agent_id||"").toLowerCase().includes(q) || (j.status||"").toLowerCase().includes(q));
   list = applyJobColumnFilters(list);
+  if (window.filterJobsByTime) { list = window.filterJobsByTime(list); }
   list = applySort(list); renderSortIndicators();
   const pageItems = applyPagination(list);
   renderFilterChips();
@@ -469,3 +470,262 @@ function bindJobColumnFilters(){
     });
   }
 }
+
+
+
+/* ==== Time Range (Kibana-like) Module ===================================== */
+const TimeRange = {
+  enabled: true,
+  field: 'updated_at',
+  mode: 'relative',
+  relMins: 1440,
+  abs: { fromMs: null, toMs: null },
+  noTzPolicy: 'utc'  // how to parse ISO without TZ: 'utc' or 'local'
+};
+
+function fmtRangeLabel(now = Date.now()) {
+  if (!TimeRange.enabled) return 'All time';
+  if (TimeRange.mode === 'relative') {
+    const mins = TimeRange.relMins;
+    if (mins % (24*60) === 0) return `Last ${mins/(24*60)}d`;
+    if (mins % 60 === 0) return `Last ${mins/60}h`;
+    return `Last ${mins}m`;
+  } else {
+    const f = (ms) => new Date(ms).toLocaleString();
+    const { fromMs, toMs } = TimeRange.abs;
+    return `${fromMs?f(fromMs):'–'} → ${toMs?f(toMs):'Now'}`;
+  }
+}
+
+function filterJobsByTime(jobs){
+  if (!TimeRange.enabled) return jobs;
+  let from=null, to=null;
+  if (TimeRange.mode === 'relative') {
+    to = Date.now();
+    from = to - TimeRange.relMins * 60 * 1000;
+  } else {
+    from = TimeRange.abs?.fromMs ?? null;
+    to   = TimeRange.abs?.toMs ?? null;
+  }
+  const field = TimeRange.field || 'updated_at';
+
+  const pass = [];
+  for (let i=0;i<jobs.length;i++){
+    const j = jobs[i];
+    const t = toTs(j?.[field]);
+    if (!Number.isFinite(t)) continue;
+    if (from!=null && t < from) continue;
+    if (to!=null && t > to) continue;
+    pass.push(j);
+  }
+
+  if (window.__timeDebug){
+    const fmt = (ms) => ms==null ? 'null' : (new Date(ms)).toString();
+    console.log('[TimeRange] mode=', TimeRange.mode, 'field=', field, 'from=', fmt(from), 'to=', fmt(to), 'kept=', pass.length, 'of', jobs.length);
+    if (pass.length===0){
+      const sample = jobs.slice(0,5).map(j=>({id:j.job_id, raw:j?.[field], ts: toTs(j?.[field])}));
+      console.warn('[TimeRange] first5 parsed:', sample);
+    }
+  }
+
+  return pass;
+}
+
+function initTimeRangeUI(){
+  const $ = (id) => document.getElementById(id);
+  const btn = $('tr-btn'); const pop = $('tr-pop'); const label = $('tr-label');
+  const fromInput = $('tr-from'); const toInput = $('tr-to');
+
+  if(!btn || !pop){ return; }
+
+  btn.addEventListener('click', () => {
+    pop.classList.toggle('hidden');
+    if (TimeRange.mode === 'absolute' && TimeRange.abs.fromMs) {
+      fromInput.value = new Date(TimeRange.abs.fromMs).toISOString().slice(0,16);
+      toInput.value = new Date(TimeRange.abs.toMs || Date.now()).toISOString().slice(0,16);
+    } else {
+      const to = new Date(); const from = new Date(Date.now() - 24*60*60*1000);
+      toInput.value = to.toISOString().slice(0,16); fromInput.value = from.toISOString().slice(0,16);
+    }
+  });
+  document.addEventListener('click', (e)=>{
+    if(!pop.contains(e.target) && !btn.contains(e.target)) pop.classList.add('hidden');
+  });
+  document.querySelectorAll('#tr-pop .tr-q').forEach(q => {
+    q.addEventListener('click', (e) => {
+      const t = e.currentTarget;
+      const minsAttr = t.getAttribute('data-mins');
+      const today = t.hasAttribute('data-today');
+      const yest = t.hasAttribute('data-yesterday');
+
+      if (minsAttr) {
+        TimeRange.mode='relative'; TimeRange.relMins=parseInt(minsAttr,10); TimeRange.enabled=true;
+      } else if (today) {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const end = start + 24*60*60*1000 - 1;
+        TimeRange.mode='absolute'; TimeRange.enabled=true; TimeRange.abs={fromMs:start,toMs:end};
+      } else if (yest) {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - 24*60*60*1000;
+        const end = start + 24*60*60*1000 - 1;
+        TimeRange.mode='absolute'; TimeRange.enabled=true; TimeRange.abs={fromMs:start,toMs:end};
+      }
+
+      const selectedField = document.querySelector('input[name="tr-field"]:checked')?.value || 'updated_at';
+      TimeRange.field = selectedField;
+      label.textContent = fmtRangeLabel();
+      if (typeof refreshJobs === 'function') refreshJobs();
+      pop.classList.add('hidden');
+    });
+  });
+  document.querySelectorAll('input[name="tr-field"]').forEach(r => {
+    r.addEventListener('change', () => {
+      TimeRange.field = r.value; label.textContent = fmtRangeLabel();
+      if (typeof refreshJobs === 'function') refreshJobs();
+    });
+  });
+  const clearBtn = document.getElementById('tr-clear');
+  const cancelBtn = document.getElementById('tr-cancel');
+  const applyBtn = document.getElementById('tr-apply');
+  clearBtn?.addEventListener('click', () => { TimeRange.enabled=false; label.textContent='All time'; if (typeof refreshJobs==='function') refreshJobs(); });
+  cancelBtn?.addEventListener('click', () => pop.classList.add('hidden'));
+  applyBtn?.addEventListener('click', () => {
+    const f = fromInput.value ? Date.parse(fromInput.value) : null;
+    const t = toInput.value ? Date.parse(toInput.value) : null;
+    const { fromMs, toMs } = clampAbs(f, t);
+    TimeRange.mode='absolute'; TimeRange.enabled=true; TimeRange.abs={fromMs, toMs};
+    const selectedField = document.querySelector('input[name="tr-field"]:checked')?.value || 'updated_at';
+    TimeRange.field = selectedField;
+    label.textContent = fmtRangeLabel();
+    if (typeof refreshJobs === 'function') refreshJobs();
+    pop.classList.add('hidden');
+  });
+
+  label.textContent = fmtRangeLabel();
+}
+
+document.addEventListener('DOMContentLoaded', initTimeRangeUI);
+window.filterJobsByTime = filterJobsByTime;
+/* ==== /Time Range Module ================================================ */
+
+
+/* ==== Time Range Helpers (fixed) ==== */
+function clampAbs(fromMs, toMs) {
+  if (fromMs && toMs && toMs < fromMs) [fromMs, toMs] = [toMs, fromMs];
+  return { fromMs, toMs };
+}
+
+/* Robust timestamp parser: supports epoch seconds, epoch millis, ISO strings */
+function toTs(v){
+  if (v == null) return NaN;
+  if (typeof v === 'number') return v < 1e12 ? v * 1000 : v;
+  if (typeof v === 'string'){
+    let s = v.trim();
+    if (!s) return NaN;
+
+    // 1) Epoch seconds/millis
+    if (/^\d{10}$/.test(s)) return parseInt(s,10) * 1000;
+    if (/^\d{13}$/.test(s)) return parseInt(s,10);
+
+    // 2) ISO with microseconds and explicit TZ -> trim to millis, parse
+    let m = s.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.(\d{3,})(Z|[+\-]\d{2}:?\d{2})$/);
+    if (m){
+      const [_, base, frac, tz] = m;
+      const ms3 = frac.slice(0,3).padEnd(3,'0');
+      const t = Date.parse(`${base}.${ms3}${tz}`);
+      return t || NaN;
+    }
+
+    // 3) ISO with microseconds but **no TZ**
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3,})$/);
+    if (m){
+      const [, Y, MM, DD, hh, mm, ss, frac] = m;
+      const ms = parseInt(frac.slice(0,3).padEnd(3,'0'), 10);
+      if ((TimeRange?.noTzPolicy || 'utc') === 'utc') {
+        const t = Date.UTC(Number(Y), Number(MM)-1, Number(DD), Number(hh), Number(mm), Number(ss), ms);
+        return t;
+      } else {
+        const dt = new Date(Number(Y), Number(MM)-1, Number(DD), Number(hh), Number(mm), Number(ss), ms);
+        return dt.getTime();
+      }
+    }
+
+    // 4) ISO without microseconds and with explicit TZ -> parse as-is
+    m = s.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+\-]\d{2}:?\d{2})$/);
+    if (m){
+      const t = Date.parse(s);
+      return t || NaN;
+    }
+
+    // 5) ISO without microseconds and **no TZ**
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (m){
+      const [, Y, MM, DD, hh, mm, ss='0'] = m;
+      if ((TimeRange?.noTzPolicy || 'utc') === 'utc') {
+        return Date.UTC(Number(Y), Number(MM)-1, Number(DD), Number(hh), Number(mm), Number(ss), 0);
+      } else {
+        return new Date(Number(Y), Number(MM)-1, Number(DD), Number(hh), Number(mm), Number(ss), 0).getTime();
+      }
+    }
+
+    // 6) YYYY/MM/DD or YYYY-MM-DD [HH:mm[:ss]] => interpret as local
+    m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (m){
+      const [_, Y, M, D, h='0', mnt='0', s2='0'] = m;
+      const dt = new Date(Number(Y), Number(M)-1, Number(D), Number(h), Number(mnt), Number(s2));
+      return dt.getTime();
+    }
+
+    // 7) DD-MM-YYYY or DD/MM/YYYY [HH:mm[:ss]] => interpret as local
+    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (m){
+      const [_, d1, d2, Y, h='0', mnt='0', s2='0'] = m;
+      const dt = new Date(Number(Y), Number(d2)-1, Number(d1), Number(h), Number(mnt), Number(s2));
+      return dt.getTime();
+    }
+
+    // 8) "29 Sep 2025 13:45:00" or "29 Sep 2025" => interpret as local
+    m = s.match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (m){
+      const months = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+      const [_, D, Mon, Y, h='0', mnt='0', s2='0'] = m;
+      const mi = months[Mon.slice(0,3).toLowerCase()];
+      if (mi!=null){
+        const dt = new Date(Number(Y), mi, Number(D), Number(h), Number(mnt), Number(s2));
+        return dt.getTime();
+      }
+    }
+
+    // 9) Fallback: try native parse (keeps TZ if present)
+    const t = Date.parse(s.includes(' ') ? s.replace(' ', 'T') : s);
+    return t || NaN;
+  }
+  return NaN;
+}
+
+function jobInTimeRange(job){
+  if (!TimeRange.enabled) return true;
+  const field = TimeRange.field || 'updated_at';
+  const v = job[field];
+  const t = toTs(v);
+  if (isNaN(t)) {
+    // Debug: log jobs with invalid timestamps
+    console.debug('Job excluded due to invalid timestamp:', job.job_id, field, v);
+    return false;
+  }
+  if (TimeRange.mode === 'relative') {
+    const to = Date.now();
+    const from = to - TimeRange.relMins * 60 * 1000;
+    // Debug: log time range and job timestamp
+    //console.debug('Checking job', job.job_id, 't:', t, 'from:', from, 'to:', to);
+    return t >= from && t <= to;
+  } else {
+    const { fromMs, toMs } = TimeRange.abs;
+    if (fromMs && t < fromMs) return false;
+    if (toMs && t > toMs) return false;
+    return true;
+  }
+}
+/* ==== /Time Range Helpers ==== */
+
