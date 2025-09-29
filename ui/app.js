@@ -398,23 +398,42 @@ async function renderAgentsDetailAndOpen(){
 
   // Attach deregisterAgent to window
   window.deregisterAgent = async function(agent_id) {
-    if (!confirm(`Deregister agent ${agent_id}?`)) return;
-    try {
-      const resp = await fetch(`${BASE}/agents/deregister`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${window.ROUTER_TOKEN || "router-secret"}` },
-        body: JSON.stringify({ agent_id })
-      });
-      const data = await resp.json();
-      if (data.ok) {
-        alert(`Agent ${agent_id} deregistered.`);
-        refreshAll();
-      } else {
-        alert(`Error: ${data.error || "Unknown error"}`);
+    const banner = document.getElementById("agents-banner");
+    if (!banner) return;
+    // Show confirmation banner
+    banner.className = "mb-2 px-3 py-2 rounded text-sm bg-yellow-50 text-yellow-800 border border-yellow-200";
+    banner.textContent = `Deregister agent ${agent_id}? `;
+    banner.innerHTML += `<button id='agents-confirm-dereg' class='ml-2 px-2 py-1 rounded bg-red-100 text-red-700'>Confirm</button> <button id='agents-cancel-dereg' class='ml-2 px-2 py-1 rounded bg-slate-100'>Cancel</button>`;
+    banner.style.display = "block";
+    document.getElementById('agents-confirm-dereg').onclick = async function() {
+      banner.textContent = "Processing...";
+      try {
+        const resp = await fetch(`${BASE}/agents/deregister`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${window.ROUTER_TOKEN || "router-secret"}` },
+          body: JSON.stringify({ agent_id })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          banner.className = "mb-2 px-3 py-2 rounded text-sm bg-green-50 text-green-800 border border-green-200";
+          banner.textContent = `Agent ${agent_id} deregistered.`;
+          setTimeout(()=>{ banner.style.display = "none"; }, 2500);
+          // Refresh agents table only (not whole page)
+          const agents = await fetchAgents();
+          state.agents = agents;
+          renderAgentsDetailAndOpen();
+        } else {
+          banner.className = "mb-2 px-3 py-2 rounded text-sm bg-red-50 text-red-800 border border-red-200";
+          banner.textContent = `Error: ${data.error || "Unknown error"}`;
+        }
+      } catch (e) {
+        banner.className = "mb-2 px-3 py-2 rounded text-sm bg-red-50 text-red-800 border border-red-200";
+        banner.textContent = `Request failed: ${e}`;
       }
-    } catch (e) {
-      alert(`Request failed: ${e}`);
-    }
+    };
+    document.getElementById('agents-cancel-dereg').onclick = function() {
+      banner.style.display = "none";
+    };
   };
   $("agents-dialog")?.showModal();
 }
@@ -500,7 +519,19 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
     setManualRefreshState();
   });
   manualRefreshBtn?.addEventListener("click", () => {
-    if (!manualRefreshBtn.disabled) refreshAll();
+    if (!manualRefreshBtn.disabled) {
+      // Add visual feedback
+      const icon = document.getElementById("refresh-icon");
+      if (icon) {
+        icon.classList.add("animate-spin");
+        manualRefreshBtn.classList.add("bg-blue-100", "ring", "ring-blue-300");
+        setTimeout(() => {
+          icon.classList.remove("animate-spin");
+          manualRefreshBtn.classList.remove("bg-blue-100", "ring", "ring-blue-300");
+        }, 700);
+      }
+      refreshAll();
+    }
   });
   refreshAll();
 })();
