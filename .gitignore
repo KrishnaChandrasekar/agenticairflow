@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+*.egg-info/
+
+# Airflow
+logs/
+*.log
+
+# Docker
+*.pid
+*.sock
+
+# Node
+node_modules/
+dist/
+build/
+
+# VSCode
+.vscode/
+
+# System
+.DS_Store
+Thumbs.db
+
+# Archive
+*.zip
+*.tar.gz
+*.tgz
+*.bak
+
+# Misc
+*.swp
+*.swo
+*.tmp
+*.out
+
+# Artifacts
+agentic-mvp/airflow/dags/__pycache__/
+agentic-mvp/airflow/plugins/agentic_ssh/__pycache__/
+agentic-mvp/airflow/plugins/__pycache__/
+agentic-mvp/agent/__pycache__/
+agentic-mvp copy/airflow/dags/__pycache__/
+agentic-mvp copy/airflow/plugins/agentic_ssh/__pycache__/
+agentic-mvp copy/airflow/plugins/__pycache__/
+agentic-mvp copy/agent/__pycache__/
+
+# IDE
+.idea/
+
+# Test
+*.coverage
+.coverage
+
+# Others
+*.bak
+*.orig
+*.rej
+
+ui/.DS_Store
+airflow/.DS_Store
+airflow/dags/.DS_Store
+airflow/plugins/.DS_Store
+agentic-mvp/.DS_Store
+router/.DS_Store
