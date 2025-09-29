@@ -446,7 +446,13 @@ async function refreshAll(){
     hideError();
     const [agents, jobs] = await Promise.all([fetchAgents(), fetchJobs()]);
     state.agents = agents; state.jobs = jobs;
-    const sel=$("tj-agent"); if (sel) sel.innerHTML = `<option value="">(Any agent via labels)</option>` + agents.map(a => `<option value="${a.agent_id}">${a.agent_id}</option>`).join("");
+    const sel = $("tj-agent");
+    if (sel) {
+      const prev = sel.value;
+      sel.innerHTML = `<option value="">(Any agent via labels)</option>` + agents.map(a => `<option value="${a.agent_id}">${a.agent_id}</option>`).join("");
+      // Restore previous selection if still present
+      if (prev && agents.some(a => a.agent_id === prev)) sel.value = prev;
+    }
     renderAgents(agents); renderJobs(jobs); renderByAgent(jobs);
   }catch(e){ console.error(e); showError(e.message); }
 }
