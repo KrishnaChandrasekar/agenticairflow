@@ -1,3 +1,28 @@
+/* Highlight effect for all clickable buttons */
+button:hover, .hover\:bg-slate-100:hover {
+    background-color: #cbd5e1 !important; /* Tailwind slate-200, darker */
+    box-shadow: 0 0 0 2px #2563eb33; /* darker blue ring */
+    transition: background 0.15s, box-shadow 0.15s;
+}
+
+button:active {
+    background-color: #94a3b8 !important; /* Tailwind slate-400, even darker */
+}
+
+button svg {
+    transition: color 0.15s;
+}
+button:hover svg {
+    color: #1e40af; /* Tailwind blue-800 */
+}
+
+/* Submit button darker effect */
+#tj-send:hover {
+    background-color: #059669 !important; /* Tailwind emerald-700 */
+}
+#tj-send:active {
+    background-color: #065f46 !important; /* Tailwind emerald-900 */
+}
 /* Moved from index.html */
 .chip{border-radius:9999px;padding:2px 8px;font-size:12px}
     .st-QUEUED{background:#eef;color:#334}

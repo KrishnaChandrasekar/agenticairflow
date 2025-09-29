@@ -192,12 +192,27 @@ async function fetchAgents(){ const j = await fetchJSON(`${BASE}/agents`); retur
 async function fetchJobs(){
   const j = await fetchJSON(`${BASE}/jobs?limit=1000`);
   const arr = Array.isArray(j) ? j : (j.jobs || []);
-  return arr.map(x => ({
-    job_id: x.job_id || x.id || "", status: (x.status || "").toUpperCase(),
-    agent_id: x.agent_id || "", rc: (x.rc !== undefined ? x.rc : null),
-    log_path: x.log_path || "", created_at: x.created_at || x.createdAt || null,
-    updated_at: x.updated_at || x.updatedAt || null, labels: x.labels || {},
-  }));
+  return arr.map(x => {
+    const job_id = x.job_id || x.id || "";
+    let labels = x.labels || {};
+    // If job_id matches a test job (heuristic: job_id in state.jobs and has job-type: test), force label
+    if (state.jobs) {
+      const localJob = state.jobs.find(j => j.job_id === job_id && j.labels && j.labels["job-type"] === "test");
+      if (localJob) {
+        labels = { ...labels, "job-type": "test" };
+      }
+    }
+    return {
+      job_id,
+      status: (x.status || "").toUpperCase(),
+      agent_id: x.agent_id || "",
+      rc: (x.rc !== undefined ? x.rc : null),
+      log_path: x.log_path || "",
+      created_at: x.created_at || x.createdAt || null,
+      updated_at: x.updated_at || x.updatedAt || null,
+      labels,
+    };
+  });
 }
 
 // ---------- sorting & pagination ----------
@@ -447,8 +462,12 @@ async function submitTestJob(){
   const cmd = $("tj-command")?.value.trim() || "";
   const agent = $("tj-agent")?.value.trim() || "";
   let labels = {}; try { labels = JSON.parse(($("tj-labels")?.value || "{}")); } catch {}
-  const route = agent ? { agent_id: agent } : { labels };
-  const payload = { command: cmd };
+  labels["job-type"] = "test";
+  // Only use labels for routing that are not 'job-type'
+  const routingLabels = { ...labels };
+  delete routingLabels["job-type"];
+  const route = agent ? { agent_id: agent } : { labels: routingLabels };
+  const payload = { command: cmd, labels };
   const out=$("tj-out"); if(out) out.textContent = "submitting...";
   try{
     const r = await fetch(`${BASE}/submit`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ job: payload, route }) });
@@ -482,7 +501,10 @@ async function submitTestJob(){
             if (String(j.job_id) === String(jobId)) {
               if (j.status !== statusData.status) updated = true;
               lastStatus = statusData.status;
-              return { ...j, status: statusData.status, rc: statusData.rc, updated_at: statusData.updated_at };
+              // Ensure job-type label is retained
+              const mergedLabels = { ...j.labels, ...statusData.labels };
+              if (!mergedLabels["job-type"]) mergedLabels["job-type"] = "test";
+              return { ...j, status: statusData.status, rc: statusData.rc, updated_at: statusData.updated_at, labels: mergedLabels };
             }
             return j;
           });
