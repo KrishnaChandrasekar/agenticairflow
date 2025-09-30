@@ -198,9 +198,14 @@
         <div>
           <div class="flex justify-between items-center">
             <h4 class="font-semibold">Logs</h4>
-            <label class="text-xs flex items-center gap-1">
-              <input id="log-autorefresh" type="checkbox" class="accent-blue-600" checked /> Follow
-            </label>
+            <div class="flex items-center gap-2">
+              <button id="drawer-log-copy" class="log-copy-btn" title="Copy logs">
+                <span style="font-size: 1.3em;">📋</span>
+              </button>
+              <label class="text-xs flex items-center gap-1">
+                <input id="log-autorefresh" type="checkbox" class="accent-blue-600" checked /> Follow
+              </label>
+            </div>
           </div>
           <pre id="drawer-log" class="bg-slate-50 p-3 rounded h-64 overflow-auto text-xs"></pre>
         </div>
@@ -223,6 +228,7 @@
           <select id="tj-agent" class="border rounded px-2 py-1 w-full">
             <option value="">(Any agent via labels)</option>
           </select>
+          <div id="tj-agent-status-banner" class="hidden mb-2 px-3 py-2 rounded text-sm"></div>
           <input id="tj-command" class="border rounded px-2 py-1 w-full" value="echo HELLO && sleep 2 && echo DONE" />
           <textarea id="tj-labels" class="border rounded px-2 py-1 w-full" rows="3"
             placeholder='{} (or {"os":"linux"})'></textarea>

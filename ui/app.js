@@ -1,3 +1,16 @@
+// Clipboard copy for job drawer logs
+document.addEventListener("DOMContentLoaded", function() {
+  const copyBtn = document.getElementById("drawer-log-copy");
+  const logPre = document.getElementById("drawer-log");
+  if (copyBtn && logPre) {
+    copyBtn.addEventListener("click", function() {
+      const text = logPre.innerText || logPre.textContent || "";
+      navigator.clipboard.writeText(text);
+      copyBtn.classList.add("copied");
+      setTimeout(() => copyBtn.classList.remove("copied"), 1200);
+    });
+  }
+});
 // ---- TimeRange early bootstrap (ensures availability before init) ----
 (function(){
   if (!window.TimeRange) {
@@ -610,25 +623,40 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
   const tjSend = $("tj-send");
   function updateSubmitButtonState() {
     if (!tjAgent || !tjSend) return;
+    const banner = document.getElementById("tj-agent-status-banner");
     const selectedId = tjAgent.value.trim();
     if (!selectedId) {
       tjSend.disabled = false;
       tjSend.classList.remove("opacity-50", "cursor-not-allowed");
+      if (banner) {
+        banner.classList.add("hidden");
+        banner.textContent = "";
+      }
       return;
     }
     const agent = (state.agents||[]).find(a => a.agent_id === selectedId);
     let status = "Offline";
+    let colorClass = "bg-red-50 text-red-700 border border-red-200";
     if (agent) {
       const lastHbMs = typeof toTs === 'function' ? toTs(agent.last_heartbeat) : (agent.last_heartbeat ? new Date(agent.last_heartbeat).getTime() : 0);
       const nowMs = Date.now();
       const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000;
       if (agent.active && lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
         status = "Registered";
+        colorClass = "bg-green-50 text-green-800 border border-green-200";
       } else if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
         status = "Discovered";
-      } else {
-        status = "Offline";
+        colorClass = "bg-yellow-50 text-yellow-800 border border-yellow-200";
       }
+    }
+    if (banner) {
+      banner.className = `mb-2 px-3 py-2 rounded text-sm ${colorClass}`;
+      if (selectedId) {
+        banner.textContent = `Agent status: ${selectedId} is ${status}`;
+      } else {
+        banner.textContent = `Agent status: ${status}`;
+      }
+      banner.classList.remove("hidden");
     }
     if (status === "Registered") {
       tjSend.disabled = false;

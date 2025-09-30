@@ -1,3 +1,23 @@
+/* Clipboard copy button for logs */
+.log-copy-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 4px;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+}
+.log-copy-btn span {
+    transition: color 0.2s;
+}
+.log-copy-btn:hover span {
+    color: #4caf50;
+}
+.log-copy-btn.copied {
+    background: #e0f7e9;
+}
 /* Highlight effect for all clickable buttons */
 button:hover, .hover\:bg-slate-100:hover {
     background-color: #cbd5e1 !important; /* Tailwind slate-200, darker */
