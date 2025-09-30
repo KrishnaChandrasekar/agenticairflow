@@ -241,6 +241,26 @@
             </div>
           </div>
           <div id="agents-banner" class="hidden mb-2 px-3 py-2 rounded text-sm"></div>
+          <!-- Pagination controls for Agents tab -->
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="text-sm text-slate-600">Rows per page</span>
+              <select id="agents-page-size" class="border rounded px-2 py-1">
+                <option selected>15</option>
+                <option>30</option>
+                <option>50</option>
+                <option>100</option>
+                <option>200</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3 text-sm">
+              <span id="agents-page-info" class="text-slate-600">–</span>
+              <div class="flex items-center gap-1">
+                <button id="agents-prev-page" class="border rounded px-2 py-1">←</button>
+                <button id="agents-next-page" class="border rounded px-2 py-1">→</button>
+              </div>
+            </div>
+          </div>
           <div class="overflow-auto" style="max-height: 70vh">
             <table class="w-full text-sm">
               <thead class="sticky top-0 bg-slate-100">
@@ -249,7 +269,7 @@
                   <th class="text-left p-2">URL</th>
                   <th class="text-left p-2">Labels</th>
                   <th class="text-left p-2">Status</th>
-                  <th class="text-left p-2">Last Heartbeat</th>
+                  <th class="text-left p-2">Last Heart Beat</th>
                   <th class="text-left p-2" id="agents-jobs-col-title">Jobs (in range)</th>
                   <th class="text-left p-2"></th>
                 </tr>

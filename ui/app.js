@@ -1,3 +1,50 @@
+// Pagination state for Agents tab
+const agentsPaging = {
+  page: 1,
+  pageSize: 15,
+};
+
+function applyAgentsPagination(list) {
+  const total = list.length, size = agentsPaging.pageSize;
+  const pages = Math.max(1, Math.ceil(total / size));
+  if (agentsPaging.page > pages) agentsPaging.page = pages;
+  const start = (agentsPaging.page - 1) * size, end = start + size;
+  const info = document.getElementById("agents-page-info");
+  if (info) {
+    const from = total ? start + 1 : 0, to = Math.min(end, total);
+    info.textContent = `${from}-${to} out of ${total}`;
+  }
+  return list.slice(start, end);
+}
+
+function attachAgentsPagingHandlers() {
+  const ps = document.getElementById("agents-page-size");
+  if (ps) {
+    ps.value = String(agentsPaging.pageSize);
+    ps.onchange = () => {
+      agentsPaging.pageSize = parseInt(ps.value, 10) || 15;
+      agentsPaging.page = 1;
+      renderAgentsDetailTab();
+    };
+  }
+  const prev = document.getElementById("agents-prev-page");
+  const next = document.getElementById("agents-next-page");
+  if (prev) prev.onclick = () => {
+    if (agentsPaging.page > 1) {
+      agentsPaging.page--;
+      renderAgentsDetailTab();
+    }
+  };
+  if (next) next.onclick = () => {
+    // We need to know the total number of agents (after filtering)
+    const total = (state.agents || []).length;
+    const pages = Math.max(1, Math.ceil(total / agentsPaging.pageSize));
+    if (agentsPaging.page < pages) {
+      agentsPaging.page++;
+      renderAgentsDetailTab();
+    }
+  };
+}
 // Clipboard copy for job drawer logs
 document.addEventListener("DOMContentLoaded", function() {
   const copyBtn = document.getElementById("drawer-log-copy");
@@ -455,7 +502,9 @@ async function renderAgentsDetailTab(){
     } catch { counts[a.agent_id] = 0; }
   }));
   const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
-  body.innerHTML = state.agents.map((a, idx) => {
+  // Apply pagination to agents list
+  const pagedAgents = applyAgentsPagination(state.agents || []);
+  body.innerHTML = pagedAgents.map((a, idx) => {
     const labels = Object.entries(a.labels||{}).map(([k,v]) => `<span class=\"chip bg-slate-100\">${k}:${v}</span>`).join(" ");
     let status = "Offline";
     let lastHbMs = toTs(a.last_heartbeat);
@@ -480,16 +529,19 @@ async function renderAgentsDetailTab(){
     </tr>`;
   }).join("");
 
-  // Set up dynamic update for Heartbeat column
+  // Set up dynamic update for Heartbeat column (only for visible agents)
   if (window.__agent_hb_interval) clearInterval(window.__agent_hb_interval);
   window.__agent_hb_interval = setInterval(() => {
-    (state.agents || []).forEach(a => {
+    (pagedAgents || []).forEach(a => {
       const el = document.getElementById(`agent-hb-${a.agent_id}`);
       if (el) {
         el.textContent = `${fmtDate(a.last_heartbeat, TZ)} · ${fmtAgo(a.last_heartbeat)}`;
       }
     });
   }, 1000);
+
+  // Attach pagination handlers (safe to call multiple times)
+  attachAgentsPagingHandlers();
 
   // Add hover effect for Deregister button
   setTimeout(() => {
