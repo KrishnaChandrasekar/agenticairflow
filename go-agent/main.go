@@ -379,6 +379,9 @@ import (
 		   return
 	   }
 	   job.PID = cmd.Process.Pid
+	   // Write PID file
+	   pidPath := filepath.Join(jobDir, "pid")
+	   os.WriteFile(pidPath, []byte(strconv.Itoa(job.PID)), 0644)
 	   done := make(chan error)
 	   go func() { done <- cmd.Wait() }()
 
