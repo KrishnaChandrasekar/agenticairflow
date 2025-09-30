@@ -441,48 +441,20 @@ function startLogFollow(job_id){
   state.logTimer = setInterval(()=>{ if ($("log-autorefresh")?.checked) follow(); }, 2000);
 }
 
-// ---------- agents detail tab with time range ----------
-// State for agents tab time range
-let agentsTimeRange = {
-  enabled: true,
-  field: 'updated_at',
-  mode: 'relative',
-  relMins: 1440,
-  abs: { fromMs: null, toMs: null },
-};
-
-function fmtAgentsRangeLabel() {
-  const fieldLabel = (agentsTimeRange.field === 'created_at') ? 'Created' : 'Updated';
-  if (!agentsTimeRange.enabled) return `${fieldLabel}: All time`;
-  if (agentsTimeRange.mode === 'relative') {
-    if (agentsTimeRange.relMins < 60) {
-      return `${fieldLabel} in Last ${agentsTimeRange.relMins}m`;
-    } else if (agentsTimeRange.relMins % 60 === 0 && agentsTimeRange.relMins < 1440) {
-      return `${fieldLabel} in Last ${agentsTimeRange.relMins/60}h`;
-    } else if (agentsTimeRange.relMins === 1440) {
-      return `${fieldLabel} in Last 24h`;
-    } else if (agentsTimeRange.relMins % 1440 === 0) {
-      return `${fieldLabel} in Last ${agentsTimeRange.relMins/1440}d`;
-    } else {
-      return `${fieldLabel} in Last ${agentsTimeRange.relMins}m`;
-    }
-  } else {
-    return `${fieldLabel}: Custom`;
-  }
-}
-
+// ---------- agents detail tab with shared time range ----------
 function agentJobInTimeRange(job) {
-  if (!agentsTimeRange.enabled) return true;
-  const field = agentsTimeRange.field || 'updated_at';
+  // Use shared TimeRange
+  if (!window.TimeRange.enabled) return true;
+  const field = window.TimeRange.field || 'updated_at';
   const v = job[field];
   const t = toTs(v);
   if (isNaN(t)) return false;
-  if (agentsTimeRange.mode === 'relative') {
+  if (window.TimeRange.mode === 'relative') {
     const to = Date.now();
-    const from = to - agentsTimeRange.relMins * 60 * 1000;
+    const from = to - window.TimeRange.relMins * 60 * 1000;
     return t >= from && t <= to;
   } else {
-    const { fromMs, toMs } = agentsTimeRange.abs;
+    const { fromMs, toMs } = window.TimeRange.abs;
     if (fromMs && t < fromMs) return false;
     if (toMs && t > toMs) return false;
     return true;
@@ -492,7 +464,7 @@ function agentJobInTimeRange(job) {
 async function renderAgentsDetailTab(){
   const body=$("agents-detail-body"); if (!body) return;
   const colTitle = document.getElementById("agents-jobs-col-title");
-  if (colTitle) colTitle.textContent = `Jobs (${fmtAgentsRangeLabel()})`;
+  if (colTitle) colTitle.textContent = `Jobs (${fmtRangeLabel()})`;
   const counts = {};
   await Promise.all(state.agents.map(async a => {
     try{
@@ -596,11 +568,14 @@ async function renderAgentsDetailTab(){
   };
 }
 
-// Time Range UI logic for Agents Tab
+
+// Shared Time Range UI logic for both tabs
 document.addEventListener("DOMContentLoaded", function() {
-  const trBtn = document.getElementById("tr-btn-agents");
-  const trPop = document.getElementById("tr-pop-agents");
-  const trLabel = document.getElementById("tr-label-agents");
+  const trBtn = document.getElementById("tr-btn-shared");
+  const trPop = document.getElementById("tr-pop-shared");
+  const trLabel = document.getElementById("tr-label-shared");
+  const fromInput = document.getElementById('tr-from-shared');
+  const toInput = document.getElementById('tr-to-shared');
   if (trBtn && trPop && trLabel) {
     const open = () => { trPop.classList.remove("hidden"); };
     const close = () => { trPop.classList.add("hidden"); };
@@ -609,58 +584,61 @@ document.addEventListener("DOMContentLoaded", function() {
     document.addEventListener("click", e => { if (!trPop.classList.contains("hidden") && !trPop.contains(e.target) && e.target !== trBtn) close(); });
     document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
     // Quick ranges
-    trPop.querySelectorAll('.tr-q-agents').forEach(btn => {
+    trPop.querySelectorAll('.tr-q-shared').forEach(btn => {
       btn.addEventListener('click', function() {
-        agentsTimeRange.enabled = true;
-        agentsTimeRange.mode = 'relative';
-        if (this.dataset.mins) agentsTimeRange.relMins = parseInt(this.dataset.mins);
-        else if (this.dataset.today) { agentsTimeRange.mode = 'absolute';
+        window.TimeRange.enabled = true;
+        window.TimeRange.mode = 'relative';
+        if (this.dataset.mins) window.TimeRange.relMins = parseInt(this.dataset.mins);
+        else if (this.dataset.today) { window.TimeRange.mode = 'absolute';
           const now = new Date();
           const from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          agentsTimeRange.abs.fromMs = from.getTime();
-          agentsTimeRange.abs.toMs = now.getTime();
+          window.TimeRange.abs.fromMs = from.getTime();
+          window.TimeRange.abs.toMs = now.getTime();
         } else if (this.dataset.yesterday) {
-          agentsTimeRange.mode = 'absolute';
+          window.TimeRange.mode = 'absolute';
           const now = new Date();
           const from = new Date(now.getFullYear(), now.getMonth(), now.getDate()-1);
           const to = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          agentsTimeRange.abs.fromMs = from.getTime();
-          agentsTimeRange.abs.toMs = to.getTime();
+          window.TimeRange.abs.fromMs = from.getTime();
+          window.TimeRange.abs.toMs = to.getTime();
         }
-        trLabel.textContent = fmtAgentsRangeLabel();
+        trLabel.textContent = fmtRangeLabel();
         close();
+        renderJobs(state.jobs);
         renderAgentsDetailTab();
       });
     });
     // Field radio
-    trPop.querySelectorAll('input[name="tr-field-agents"]').forEach(radio => {
+    trPop.querySelectorAll('input[name="tr-field-shared"]').forEach(radio => {
       radio.addEventListener('change', function() {
-        agentsTimeRange.field = this.value;
-        trLabel.textContent = fmtAgentsRangeLabel();
+        window.TimeRange.field = this.value;
+        trLabel.textContent = fmtRangeLabel();
+        renderJobs(state.jobs);
         renderAgentsDetailTab();
       });
     });
     // Absolute range
-    document.getElementById('tr-apply-agents').addEventListener('click', function() {
-      agentsTimeRange.enabled = true;
-      agentsTimeRange.mode = 'absolute';
-      const fromVal = document.getElementById('tr-from-agents').value;
-      const toVal = document.getElementById('tr-to-agents').value;
-      agentsTimeRange.abs.fromMs = fromVal ? new Date(fromVal).getTime() : null;
-      agentsTimeRange.abs.toMs = toVal ? new Date(toVal).getTime() : null;
-      trLabel.textContent = fmtAgentsRangeLabel();
+    document.getElementById('tr-apply-shared').addEventListener('click', function() {
+      window.TimeRange.enabled = true;
+      window.TimeRange.mode = 'absolute';
+      window.TimeRange.abs.fromMs = fromInput && fromInput.value ? (new Date(fromInput.value)).getTime() : null;
+      window.TimeRange.abs.toMs = toInput && toInput.value ? (new Date(toInput.value)).getTime() : null;
+      trLabel.textContent = fmtRangeLabel();
       close();
+      renderJobs(state.jobs);
       renderAgentsDetailTab();
     });
-    document.getElementById('tr-clear-agents').addEventListener('click', function() {
-      agentsTimeRange.enabled = false;
-      trLabel.textContent = fmtAgentsRangeLabel();
+    document.getElementById('tr-clear-shared').addEventListener('click', function() {
+      window.TimeRange.enabled = false;
+      trLabel.textContent = fmtRangeLabel();
       close();
+      renderJobs(state.jobs);
       renderAgentsDetailTab();
     });
-    document.getElementById('tr-cancel-agents').addEventListener('click', function() {
+    document.getElementById('tr-cancel-shared').addEventListener('click', function() {
       close();
     });
+    trLabel.textContent = fmtRangeLabel();
   }
 });
 
