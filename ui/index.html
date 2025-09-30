@@ -209,16 +209,32 @@
             </div>
           </div>
           <div class="overflow-auto" style="max-height: 70vh">
-            <table class="w-full text-sm">
+            <table class="w-full text-sm" id="agents-table">
               <thead class="sticky top-0 bg-slate-100">
                 <tr>
-                  <th class="text-left p-2">Agent</th>
-                  <th class="text-left p-2">URL</th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="agent_id">Agent <span class="text-xs" id="sort-agent_id-agents"></span></th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="url">URL <span class="text-xs" id="sort-url-agents"></span></th>
                   <th class="text-left p-2">Labels</th>
-                  <th class="text-left p-2">Status</th>
-                  <th class="text-left p-2">Last Heart Beat</th>
-                  <th class="text-left p-2" id="agents-jobs-col-title">Jobs (in range)</th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="status">Status <span class="text-xs" id="sort-status-agents"></span></th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="last_heartbeat">Last Heart Beat <span class="text-xs" id="sort-last_heartbeat-agents"></span></th>
+                  <th class="text-left p-2 cursor-pointer" id="agents-jobs-col-title" data-sort="jobs_in_range">Jobs (in range) <span class="text-xs" id="sort-jobs_in_range-agents"></span></th>
                   <th class="text-left p-2"></th>
+                </tr>
+                <tr>
+                  <th class="p-2"><input id="f-agent_id-agents" class="border rounded px-2 py-1 w-full" placeholder="Filter agent id" /></th>
+                  <th class="p-2"><input id="f-url-agents" class="border rounded px-2 py-1 w-full" placeholder="Filter url" /></th>
+                  <th class="p-2"><input id="f-labels-agents" class="border rounded px-2 py-1 w-full" placeholder="key or 'k:v'" /></th>
+                  <th class="p-2">
+                    <select id="f-status-agents" class="border rounded px-2 py-1 w-full">
+                      <option value=""></option>
+                      <option>Registered</option>
+                      <option>Discovered</option>
+                      <option>Offline</option>
+                    </select>
+                  </th>
+                  <th class="p-2"><input id="f-last_heartbeat-agents" class="border rounded px-2 py-1 w-full" placeholder="Filter date/time" /></th>
+                  <th class="p-2"></th>
+                  <th class="p-2"><button id="f-clear-all-agents" class="text-xs border rounded px-2 py-1">Clear all</button></th>
                 </tr>
               </thead>
               <tbody id="agents-detail-body"></tbody>

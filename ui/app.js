@@ -490,15 +490,15 @@ async function renderAgentsDetailTab(){
     const rowId = `agent-row-${idx}`;
     const deregBtn = (status === "Registered") ? `<button class=\"px-2 py-1 text-xs bg-red-200 rounded agent-dereg-btn\" data-rowid=\"${rowId}\" onclick=\"deregisterAgent('${a.agent_id}')\">Deregister</button>` : "";
   // Add a span with a unique id for dynamic update, monospace and min-width for stable layout
-    return `<tr id=\"${rowId}\">
-      <td class=\"p-2 font-mono\">${a.agent_id}</td>
-      <td class=\"p-2 font-mono\">${a.url}</td>
-      <td class=\"p-2\">${labels||"-"}</td>
-      <td class=\"p-2\">${status}</td>
-      <td class=\"p-2 text-slate-500\"><span id=\"agent-hb-${a.agent_id}\">${fmtDate(a.last_heartbeat, TZ)} · ${fmtAgo(a.last_heartbeat)}</span></td>
-      <td class=\"p-2\">${counts[a.agent_id] ?? 0}</td>
-      <td class=\"p-2\">${deregBtn}</td>
-    </tr>`;
+  return `<tr id=\"${rowId}\" class=\"border-b border-slate-200\">
+    <td class=\"p-2 font-mono\">${a.agent_id}</td>
+    <td class=\"p-2 font-mono\">${a.url}</td>
+    <td class=\"p-2\">${labels||"-"}</td>
+    <td class=\"p-2\">${status}</td>
+    <td class=\"p-2 text-slate-500\"><span id=\"agent-hb-${a.agent_id}\">${fmtDate(a.last_heartbeat, TZ)} · ${fmtAgo(a.last_heartbeat)}</span></td>
+    <td class=\"p-2\">${counts[a.agent_id] ?? 0}</td>
+    <td class="p-2">${deregBtn}</td>
+  </tr>`;
   }).join("");
 
   // Set up dynamic update for Heartbeat column (only for visible agents)
