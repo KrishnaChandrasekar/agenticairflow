@@ -192,12 +192,26 @@ async function fetchAgents(){ const j = await fetchJSON(`${BASE}/agents`); retur
 async function fetchJobs(){
   const j = await fetchJSON(`${BASE}/jobs?limit=1000`);
   const arr = Array.isArray(j) ? j : (j.jobs || []);
-  return arr.map(x => ({
-    job_id: x.job_id || x.id || "", status: (x.status || "").toUpperCase(),
-    agent_id: x.agent_id || "", rc: (x.rc !== undefined ? x.rc : null),
-    log_path: x.log_path || "", created_at: x.created_at || x.createdAt || null,
-    updated_at: x.updated_at || x.updatedAt || null, labels: x.labels || {},
-  }));
+  let testJobIds = [];
+  try { testJobIds = JSON.parse(localStorage.getItem("testJobIds") || "[]"); } catch {}
+  return arr.map(x => {
+    const job_id = x.job_id || x.id || "";
+    let labels = x.labels || {};
+    // If job_id matches a test job (persisted), force label
+    if (testJobIds.includes(job_id)) {
+      labels = { ...labels, "job-type": "test" };
+    }
+    return {
+      job_id,
+      status: (x.status || "").toUpperCase(),
+      agent_id: x.agent_id || "",
+      rc: (x.rc !== undefined ? x.rc : null),
+      log_path: x.log_path || "",
+      created_at: x.created_at || x.createdAt || null,
+      updated_at: x.updated_at || x.updatedAt || null,
+      labels,
+    };
+  });
 }
 
 // ---------- sorting & pagination ----------
@@ -398,23 +412,42 @@ async function renderAgentsDetailAndOpen(){
 
   // Attach deregisterAgent to window
   window.deregisterAgent = async function(agent_id) {
-    if (!confirm(`Deregister agent ${agent_id}?`)) return;
-    try {
-      const resp = await fetch(`${BASE}/agents/deregister`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${window.ROUTER_TOKEN || "router-secret"}` },
-        body: JSON.stringify({ agent_id })
-      });
-      const data = await resp.json();
-      if (data.ok) {
-        alert(`Agent ${agent_id} deregistered.`);
-        refreshAll();
-      } else {
-        alert(`Error: ${data.error || "Unknown error"}`);
+    const banner = document.getElementById("agents-banner");
+    if (!banner) return;
+    // Show confirmation banner
+    banner.className = "mb-2 px-3 py-2 rounded text-sm bg-yellow-50 text-yellow-800 border border-yellow-200";
+    banner.textContent = `Deregister agent ${agent_id}? `;
+    banner.innerHTML += `<button id='agents-confirm-dereg' class='ml-2 px-2 py-1 rounded bg-red-100 text-red-700'>Confirm</button> <button id='agents-cancel-dereg' class='ml-2 px-2 py-1 rounded bg-slate-100'>Cancel</button>`;
+    banner.style.display = "block";
+    document.getElementById('agents-confirm-dereg').onclick = async function() {
+      banner.textContent = "Processing...";
+      try {
+        const resp = await fetch(`${BASE}/agents/deregister`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${window.ROUTER_TOKEN || "router-secret"}` },
+          body: JSON.stringify({ agent_id })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          banner.className = "mb-2 px-3 py-2 rounded text-sm bg-green-50 text-green-800 border border-green-200";
+          banner.textContent = `Agent ${agent_id} deregistered.`;
+          setTimeout(()=>{ banner.style.display = "none"; }, 2500);
+          // Refresh agents table only (not whole page)
+          const agents = await fetchAgents();
+          state.agents = agents;
+          renderAgentsDetailAndOpen();
+        } else {
+          banner.className = "mb-2 px-3 py-2 rounded text-sm bg-red-50 text-red-800 border border-red-200";
+          banner.textContent = `Error: ${data.error || "Unknown error"}`;
+        }
+      } catch (e) {
+        banner.className = "mb-2 px-3 py-2 rounded text-sm bg-red-50 text-red-800 border border-red-200";
+        banner.textContent = `Request failed: ${e}`;
       }
-    } catch (e) {
-      alert(`Request failed: ${e}`);
-    }
+    };
+    document.getElementById('agents-cancel-dereg').onclick = function() {
+      banner.style.display = "none";
+    };
   };
   $("agents-dialog")?.showModal();
 }
@@ -428,14 +461,72 @@ async function submitTestJob(){
   const cmd = $("tj-command")?.value.trim() || "";
   const agent = $("tj-agent")?.value.trim() || "";
   let labels = {}; try { labels = JSON.parse(($("tj-labels")?.value || "{}")); } catch {}
-  const route = agent ? { agent_id: agent } : { labels };
-  const payload = { command: cmd };
+  labels["job-type"] = "test";
+  // Persist test job id in localStorage
+  let testJobIds = [];
+  try { testJobIds = JSON.parse(localStorage.getItem("testJobIds") || "[]"); } catch {}
+  // Only use labels for routing that are not 'job-type'
+  const routingLabels = { ...labels };
+  delete routingLabels["job-type"];
+  const route = agent ? { agent_id: agent } : { labels: routingLabels };
+  const payload = { command: cmd, labels };
   const out=$("tj-out"); if(out) out.textContent = "submitting...";
   try{
     const r = await fetch(`${BASE}/submit`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ job: payload, route }) });
     const text = await r.text();
     if(out) out.textContent = text;
     refreshAll();
+    // Try to extract job_id from response (robust)
+    let jobId = "";
+    try {
+      // Try JSON parse first
+      const jobObj = JSON.parse(text);
+      if (jobObj && jobObj.job_id) jobId = jobObj.job_id;
+      else if (jobObj && jobObj.id) jobId = jobObj.id;
+    } catch {
+      // Fallback to regex
+      const jobMatch = text.match(/job_id\s*[:=]\s*['\"]?(\w+)["']?/i);
+      if (jobMatch) jobId = jobMatch[1];
+    }
+    // If jobId found, store in localStorage and start polling for status
+    if (jobId) {
+      if (!testJobIds.includes(jobId)) {
+        testJobIds.push(jobId);
+        localStorage.setItem("testJobIds", JSON.stringify(testJobIds));
+      }
+      let pollCount = 0;
+      let lastStatus = "RUNNING";
+      const pollStatus = async () => {
+        pollCount++;
+        try {
+          const statusResp = await fetch(`${BASE}/status/${jobId}`);
+          const statusData = await statusResp.json();
+          // Update job in state.jobs
+          let updated = false;
+          state.jobs = (state.jobs||[]).map(j => {
+            if (String(j.job_id) === String(jobId)) {
+              if (j.status !== statusData.status) updated = true;
+              lastStatus = statusData.status;
+              // Ensure job-type label is retained
+              const mergedLabels = { ...j.labels, ...statusData.labels };
+              if (!mergedLabels["job-type"]) mergedLabels["job-type"] = "test";
+              return { ...j, status: statusData.status, rc: statusData.rc, updated_at: statusData.updated_at, labels: mergedLabels };
+            }
+            return j;
+          });
+          if (updated) renderJobs(state.jobs);
+          if (lastStatus === "RUNNING" && pollCount < 60) {
+            setTimeout(pollStatus, 2000); // poll every 2s, max 2min
+          } else {
+            renderJobs(state.jobs);
+          }
+        } catch {
+          // If error, try again up to max pollCount
+          if (pollCount < 60) setTimeout(pollStatus, 2000);
+        }
+      };
+      pollStatus();
+    }
   }catch(e){ if(out) out.textContent = "error: "+e.message; }
 }
 $("tj-send")?.addEventListener("click", submitTestJob);
@@ -474,9 +565,87 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
   $("job-filter")?.addEventListener("input", () => { state.page = 1; renderJobs(state.jobs); });
   $("byagent-status")?.addEventListener("change", () => renderByAgent(state.jobs));
   $("byagent-filter")?.addEventListener("input", () => renderByAgent(state.jobs));
-  const ar=$("autorefresh"); const schedule=()=>{ if (state.jobTimer) clearInterval(state.jobTimer); state.jobTimer=setInterval(refreshAll, 2000); };
+  const ar = $("autorefresh");
+  const manualRefreshBtn = $("manual-refresh");
+  const setManualRefreshState = () => {
+    if (ar?.checked) {
+      manualRefreshBtn.disabled = true;
+      manualRefreshBtn.classList.add("opacity-50", "cursor-not-allowed");
+    } else {
+      manualRefreshBtn.disabled = false;
+      manualRefreshBtn.classList.remove("opacity-50", "cursor-not-allowed");
+    }
+  };
+  const schedule = () => {
+    if (state.jobTimer) clearInterval(state.jobTimer);
+    state.jobTimer = setInterval(refreshAll, 2000);
+  };
   if (!ar || ar.checked) schedule();
-  ar?.addEventListener("change", () => { if (ar.checked) schedule(); else { if (state.jobTimer) clearInterval(state.jobTimer); state.jobTimer=null; } });
+  setManualRefreshState();
+  ar?.addEventListener("change", () => {
+    if (ar.checked) schedule();
+    else {
+      if (state.jobTimer) clearInterval(state.jobTimer);
+      state.jobTimer = null;
+    }
+    setManualRefreshState();
+  });
+  manualRefreshBtn?.addEventListener("click", () => {
+    if (!manualRefreshBtn.disabled) {
+      // Add visual feedback
+      const icon = document.getElementById("refresh-icon");
+      if (icon) {
+        icon.classList.add("animate-spin");
+        manualRefreshBtn.classList.add("bg-blue-100", "ring", "ring-blue-300");
+        setTimeout(() => {
+          icon.classList.remove("animate-spin");
+          manualRefreshBtn.classList.remove("bg-blue-100", "ring", "ring-blue-300");
+        }, 700);
+      }
+      refreshAll();
+    }
+  });
+  // --- Submit Test Job button enable/disable logic ---
+  const tjAgent = $("tj-agent");
+  const tjSend = $("tj-send");
+  function updateSubmitButtonState() {
+    if (!tjAgent || !tjSend) return;
+    const selectedId = tjAgent.value.trim();
+    if (!selectedId) {
+      tjSend.disabled = false;
+      tjSend.classList.remove("opacity-50", "cursor-not-allowed");
+      return;
+    }
+    const agent = (state.agents||[]).find(a => a.agent_id === selectedId);
+    let status = "Offline";
+    if (agent) {
+      const lastHbMs = typeof toTs === 'function' ? toTs(agent.last_heartbeat) : (agent.last_heartbeat ? new Date(agent.last_heartbeat).getTime() : 0);
+      const nowMs = Date.now();
+      const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000;
+      if (agent.active && lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
+        status = "Registered";
+      } else if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
+        status = "Discovered";
+      } else {
+        status = "Offline";
+      }
+    }
+    if (status === "Registered") {
+      tjSend.disabled = false;
+      tjSend.classList.remove("opacity-50", "cursor-not-allowed");
+    } else {
+      tjSend.disabled = true;
+      tjSend.classList.add("opacity-50", "cursor-not-allowed");
+    }
+  }
+  tjAgent?.addEventListener("change", updateSubmitButtonState);
+  // Also update on refreshAll (agents list changes)
+  const origRefreshAll = refreshAll;
+  window.refreshAll = async function() {
+    await origRefreshAll.apply(this, arguments);
+    updateSubmitButtonState();
+  };
+  updateSubmitButtonState();
   refreshAll();
 })();
 function applyJobColumnFilters(list){
@@ -529,6 +698,9 @@ function renderFilterChips(){
       close.onclick = (e) => {
         e.stopPropagation();
         window.TimeRange.enabled = false;
+        // Update the Kibana-like filter dropdown label to 'All Time'
+        const trLabel = document.getElementById('tr-label');
+        if (trLabel) trLabel.textContent = (typeof fmtRangeLabel==='function' ? fmtRangeLabel() : 'Updated: All time');
         if (typeof refreshJobs === 'function') refreshJobs();
         span.remove();
       };
@@ -558,6 +730,9 @@ function renderFilterChips(){
       const k = btn.dataset.chip;
       if (k === 'timerange') {
         if (window.TimeRange) window.TimeRange.enabled = false;
+        // Also update the Kibana-like filter dropdown label to 'All Time'
+        const trLabel = document.getElementById('tr-label');
+        if (trLabel) trLabel.textContent = (typeof fmtRangeLabel==='function' ? fmtRangeLabel() : 'Updated: All time');
       } else {
         state.filters[k] = '';
         const el = document.getElementById('f-'+k);
