@@ -21,36 +21,49 @@
     arcBg.setAttribute("stroke-width", "14");
     arcBg.setAttribute("fill", "none");
     svg.appendChild(arcBg);
-  // Draw foreground arc (success rate)
+  // Draw foreground arc (success rate) with animation
   const arcFg = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  // Correct: green arc should cover the percent (rate) from startAngle to startAngle + rate * Math.PI
-  const fgEnd = Math.PI + rate * Math.PI;
-  arcFg.setAttribute("d", arcPath(startAngle, fgEnd, "#22c55e", 12));
   arcFg.setAttribute("stroke", "#22c55e");
   arcFg.setAttribute("stroke-width", "14");
   arcFg.setAttribute("fill", "none");
   arcFg.setAttribute("stroke-linecap", "round");
   svg.appendChild(arcFg);
+  // Animate arc and percent text
+  let animStart;
+  const animDuration = 900; // ms
+  function animateGauge(ts) {
+    if (!animStart) animStart = ts;
+    const progress = Math.min(1, (ts - animStart) / animDuration);
+    const curRate = rate * progress;
+    const fgEnd = Math.PI + curRate * Math.PI;
+    arcFg.setAttribute("d", arcPath(startAngle, fgEnd, "#22c55e", 12));
+    // Animate percent text
+    textRate.textContent = Math.round(percent * progress) + "%";
+    if (progress < 1) requestAnimationFrame(animateGauge);
+    else textRate.textContent = percent + "%";
+  }
     // Total jobs in center
     const textTotal = document.createElementNS("http://www.w3.org/2000/svg", "text");
     textTotal.setAttribute("x", cx);
     textTotal.setAttribute("y", cy - 8);
     textTotal.setAttribute("text-anchor", "middle");
-  textTotal.setAttribute("font-size", "2.9em");
+    textTotal.setAttribute("font-size", "2.9em");
     textTotal.setAttribute("font-weight", "700");
     textTotal.setAttribute("fill", "#222933");
     textTotal.textContent = total;
     svg.appendChild(textTotal);
-    // Success rate below
+    // Success rate below (animated)
     const textRate = document.createElementNS("http://www.w3.org/2000/svg", "text");
     textRate.setAttribute("x", cx);
     textRate.setAttribute("y", cy + 28);
     textRate.setAttribute("text-anchor", "middle");
-  textRate.setAttribute("font-size", "1.8em");
+    textRate.setAttribute("font-size", "1.8em");
     textRate.setAttribute("font-weight", "600");
     textRate.setAttribute("fill", "#22c55e");
-    textRate.textContent = percent + "%";
+    textRate.textContent = "0%";
     svg.appendChild(textRate);
+    // Start animation
+    requestAnimationFrame(animateGauge);
   }
   function renderScatterPlot(jobs) {
     const svg = document.getElementById("analytics-scatterplot");
@@ -174,8 +187,8 @@
   const cellH = (height - margin.top - margin.bottom) / 7;
     // Find max for color scale
     const maxCount = Math.max(1, ...counts.flat());
-    // Color scale
-    const color = d3.scaleLinear().domain([0, maxCount]).range(["#e5e7eb", "#2563eb"]);
+  // Color scale (theme-aligned: gray to green)
+  const color = d3.scaleLinear().domain([0, maxCount]).range(["#e5e7eb", "#22c55e"]);
     // Draw cells
     for (let day = 0; day < 7; ++day) {
       for (let hour = 0; hour < 24; ++hour) {
