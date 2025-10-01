@@ -255,21 +255,40 @@
           </div>
         </div>
         <div id="tab-content-analytics" style="display:none; min-height:400px;">
-          <div id="analytics-chart" class="analytics-chart"></div>
-          <div class="flex flex-row items-stretch gap-6 mt-4 mb-4">
-            <div class="flex flex-col items-center justify-center py-6">
-              <div class="analytics-gauge-box mb-8" style="height: 140px;">
-                <span class="analytics-gauge-title">Total Jobs</span>
-                <svg id="analytics-total-gauge" width="180" height="120"></svg>
-              </div>
-              <div class="analytics-gauge-box" style="height: 140px;">
-                <span class="analytics-gauge-title">Success Rate</span>
-                <svg id="analytics-success-gauge" width="180" height="120"></svg>
-              </div>
+          <div class="flex flex-row items-stretch gap-6 mb-4">
+            <div class="analytics-gauge-box analytics-gauge-dual" style="min-width:320px;">
+              <span class="analytics-gauge-title">Total Jobs &amp; Success Rate</span>
+              <svg id="analytics-dual-gauge" width="340" height="170"></svg>
             </div>
+            <div id="analytics-chart" class="analytics-chart flex-1"></div>
+          </div>
+          <div class="flex flex-row items-stretch gap-6 mb-4">
             <div id="analytics-heatmap-box" class="analytics-heatmap-box flex-1">
               <span class="analytics-heatmap-title">Jobs Heatmap (Hour vs Day)</span>
-              <svg id="analytics-heatmap" height="220"></svg>
+              <svg id="analytics-heatmap" height="170"></svg>
+            </div>
+          </div>
+          <div class="flex flex-row items-stretch gap-6 mb-4">
+            <div class="analytics-donut-box flex-1">
+              <span class="analytics-donut-title">Job Type Distribution</span>
+              <div class="analytics-donut-flexrow">
+                <svg id="analytics-jobtype-donut" width="220" height="220"></svg>
+                <div id="analytics-jobtype-legend" class="analytics-donut-legend"></div>
+              </div>
+            </div>
+            <div class="analytics-donut-box flex-1">
+              <span class="analytics-donut-title">Test Job Status Distribution</span>
+              <div class="analytics-donut-flexrow">
+                <svg id="analytics-testjobstatus-donut" width="220" height="220"></svg>
+                <div id="analytics-testjobstatus-legend" class="analytics-donut-legend"></div>
+              </div>
+            </div>
+            <div class="analytics-donut-box flex-1">
+              <span class="analytics-donut-title">Airflow Job Status Distribution</span>
+              <div class="analytics-donut-flexrow">
+                <svg id="analytics-airflowjobstatus-donut" width="220" height="220"></svg>
+                <div id="analytics-airflowjobstatus-legend" class="analytics-donut-legend"></div>
+              </div>
             </div>
           </div>
         </div>

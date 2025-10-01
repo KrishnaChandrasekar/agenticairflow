@@ -1,3 +1,40 @@
+/* Flex row for donut chart and legend */
+.analytics-donut-flexrow {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    justify-content: center;
+}
+/* Legend for Job Type Distribution donut chart */
+.analytics-donut-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-left: 18px;
+    justify-content: flex-start;
+    align-items: flex-start;
+    min-width: 120px;
+}
+.analytics-donut-box {
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    margin-top: 16px;
+    margin-bottom: 16px;
+    padding: 18px 0 8px 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+}
+.analytics-donut-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 8px;
+    padding-left: 0;
+}
 .analytics-scatterplot-box {
     width: 100%;
     background: #f8fafc;
@@ -19,7 +56,7 @@
     padding-left: 0;
 }
 .analytics-gauge-box {
-    width: 180px;
+    width: 340px;
     background: #f8fafc;
     border: 1.5px solid #e5e7eb;
     border-radius: 16px;
@@ -44,8 +81,8 @@
     border-radius: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
     margin-top: 25px;
-    margin-bottom: 35px;
-    padding: 18px 0 8px 32px;
+    margin-bottom: 9px;
+    padding: 18px 0 0 32px; /* reduce bottom padding to 0 */
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -54,6 +91,7 @@
 #analytics-heatmap {
     width: 100%;
     display: block;
+    height: 170px !important;
 }
 .analytics-heatmap-title {
     font-size: 1.1em;
@@ -159,7 +197,7 @@
     left: 12px;
     z-index: 2;
 }
-.analytics-doughnut-box {
+.analytics-donut-box {
     width: 28.57%;
     aspect-ratio: 2/1;
     background: #f8fafc;
@@ -168,6 +206,7 @@
     align-items: center;
     justify-content: center;
     margin-right: 3px;
+    margin-top: 4px; /* further reduced by 1/3rd from 6px */
     position: relative;
 }
 .analytics-doughnut-box svg {

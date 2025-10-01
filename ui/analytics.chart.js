@@ -1,3 +1,57 @@
+  function renderDualGauge(jobs) {
+  const svg = document.getElementById("analytics-dual-gauge");
+  if (!svg) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const total = jobs.length;
+  const succeeded = jobs.filter(j => j.status === "SUCCEEDED").length;
+  const rate = total ? succeeded / total : 0;
+  const percent = Math.round(rate * 100);
+  const width = 340, height = 170, cx = width/2, cy = height*0.8, r = 100;
+    // Draw background arc (full gauge)
+    const arcBg = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const startAngle = Math.PI, endAngle = 0;
+    const arcPath = (sa, ea, color, strokeWidth) => {
+      const x1 = cx + r * Math.cos(sa), y1 = cy + r * Math.sin(sa);
+      const x2 = cx + r * Math.cos(ea), y2 = cy + r * Math.sin(ea);
+      const largeArc = ea - sa <= Math.PI ? 0 : 1;
+      return `M${x1},${y1} A${r},${r} 0 ${largeArc} 1 ${x2},${y2}`;
+    };
+    arcBg.setAttribute("d", arcPath(startAngle, endAngle, "#e5e7eb", 12));
+    arcBg.setAttribute("stroke", "#e5e7eb");
+    arcBg.setAttribute("stroke-width", "14");
+    arcBg.setAttribute("fill", "none");
+    svg.appendChild(arcBg);
+  // Draw foreground arc (success rate)
+  const arcFg = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  // Correct: green arc should cover the percent (rate) from startAngle to startAngle + rate * Math.PI
+  const fgEnd = Math.PI + rate * Math.PI;
+  arcFg.setAttribute("d", arcPath(startAngle, fgEnd, "#22c55e", 12));
+  arcFg.setAttribute("stroke", "#22c55e");
+  arcFg.setAttribute("stroke-width", "14");
+  arcFg.setAttribute("fill", "none");
+  arcFg.setAttribute("stroke-linecap", "round");
+  svg.appendChild(arcFg);
+    // Total jobs in center
+    const textTotal = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    textTotal.setAttribute("x", cx);
+    textTotal.setAttribute("y", cy - 8);
+    textTotal.setAttribute("text-anchor", "middle");
+  textTotal.setAttribute("font-size", "2.9em");
+    textTotal.setAttribute("font-weight", "700");
+    textTotal.setAttribute("fill", "#222933");
+    textTotal.textContent = total;
+    svg.appendChild(textTotal);
+    // Success rate below
+    const textRate = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    textRate.setAttribute("x", cx);
+    textRate.setAttribute("y", cy + 28);
+    textRate.setAttribute("text-anchor", "middle");
+  textRate.setAttribute("font-size", "1.8em");
+    textRate.setAttribute("font-weight", "600");
+    textRate.setAttribute("fill", "#22c55e");
+    textRate.textContent = percent + "%";
+    svg.appendChild(textRate);
+  }
   function renderScatterPlot(jobs) {
     const svg = document.getElementById("analytics-scatterplot");
     if (!svg) return;
@@ -226,10 +280,10 @@
     })).sort((a,b) => a.bin - b.bin);
   }
 
-  function renderAirflowJobStatePie(jobs) {
-    const airflowJobStateSvg = document.getElementById("analytics-airflowstate-chart");
-    if (!airflowJobStateSvg) return;
-    while (airflowJobStateSvg.firstChild) airflowJobStateSvg.removeChild(airflowJobStateSvg.firstChild);
+  function renderAirflowJobStatusDonut(jobs) {
+    const svg = document.getElementById("analytics-airflowjobstatus-donut");
+    if (!svg) return;
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
     const airflowJobs = jobs.filter(job => parseJobType(job) === "Airflow Job");
     const stateCounts = {};
     airflowJobs.forEach(job => {
@@ -245,7 +299,7 @@
       k === "QUEUED" ? "#a2b7cfff" :
       "#1e40af"
     );
-    const width = 120, height = 120, radius = 54, innerRadius = 0;
+  const width = 220, height = 220, radius = 90, innerRadius = 50;
     const pie = d3.pie().sort(null);
     const arc = d3.arc().innerRadius(innerRadius).outerRadius(radius);
     const arcs = pie(data);
@@ -304,13 +358,67 @@
       text.textContent = data[i];
       g.appendChild(text);
     });
-    airflowJobStateSvg.appendChild(g);
+    svg.appendChild(g);
   }
 
-  function renderTestJobStatePie(jobs) {
-    const testJobStateSvg = document.getElementById("analytics-testjobstate-chart");
-    if (!testJobStateSvg) return;
-    while (testJobStateSvg.firstChild) testJobStateSvg.removeChild(testJobStateSvg.firstChild);
+  function renderTestJobStatusDonut(jobs) {
+    // Render legend to the right of chart
+    const testLegend = document.getElementById("analytics-testjobstatus-legend");
+    if (testLegend) {
+      testLegend.innerHTML = "";
+      const testJobs = jobs.filter(job => parseJobType(job) === "Test Job");
+      const stateCounts = {};
+      testJobs.forEach(job => {
+        const state = job.status || "Unknown";
+        stateCounts[state] = (stateCounts[state] || 0) + 1;
+      });
+      const stateKeys = Object.keys(stateCounts);
+      // Use the same color logic as the chart arcs
+      const stateColors = stateKeys.map(k =>
+        k === "FAILED" ? "#f27373ff" :
+        k === "SUCCEEDED" ? "#669636ff" :
+        k === "RUNNING" ? "#7BC143" :
+        k === "QUEUED" ? "#B7E4A0" :
+        "#669636"
+      );
+      stateKeys.forEach((label, i) => {
+        const item = document.createElement("div");
+        item.style.display = "flex";
+        item.style.alignItems = "center";
+        item.innerHTML = `<span style='display:inline-block;width:16px;height:16px;border-radius:4px;background:${stateColors[i]};margin-right:7px;'></span><span style='font-size:1em;color:#334155;'>${label}</span>`;
+        testLegend.appendChild(item);
+      });
+    }
+    // Render legend to the right of chart
+    const airflowLegend = document.getElementById("analytics-airflowjobstatus-legend");
+    if (airflowLegend) {
+      airflowLegend.innerHTML = "";
+      const airflowJobs = jobs.filter(job => parseJobType(job) === "Airflow Job");
+      const stateCounts = {};
+      airflowJobs.forEach(job => {
+        const state = job.status || "Unknown";
+        stateCounts[state] = (stateCounts[state] || 0) + 1;
+      });
+      const stateKeys = Object.keys(stateCounts);
+      // Use the same color logic as the chart arcs
+      const stateColors = stateKeys.map(k =>
+        k === "FAILED" ? "#ef7f7fff" :
+        k === "SUCCEEDED" ? "#A1D76A" :
+        k === "RUNNING" ? "#8ebbf3ff" :
+        k === "QUEUED" ? "#a2b7cfff" :
+        "#1e40af"
+      );
+      stateKeys.forEach((label, i) => {
+        const item = document.createElement("div");
+        item.style.display = "flex";
+        item.style.alignItems = "center";
+        item.innerHTML = `<span style='display:inline-block;width:16px;height:16px;border-radius:4px;background:${stateColors[i]};margin-right:7px;'></span><span style='font-size:1em;color:#334155;'>${label}</span>`;
+        airflowLegend.appendChild(item);
+      });
+    }
+    const svg = document.getElementById("analytics-testjobstatus-donut");
+    if (!svg) return;
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
     const testJobs = jobs.filter(job => parseJobType(job) === "Test Job");
     const stateCounts = {};
     testJobs.forEach(job => {
@@ -326,7 +434,7 @@
       k === "QUEUED" ? "#B7E4A0" :
       "#669636"
     );
-    const width = 120, height = 120, radius = 54, innerRadius = 0;
+  const width = 220, height = 220, radius = 90, innerRadius = 50;
     const pie = d3.pie().sort(null);
     const arc = d3.arc().innerRadius(innerRadius).outerRadius(radius);
     const arcs = pie(data);
@@ -385,17 +493,27 @@
       text.textContent = data[i];
       g.appendChild(text);
     });
-    testJobStateSvg.appendChild(g);
+    svg.appendChild(g);
   }
 
-  function renderJobTypeDoughnut(jobs) {
-    const doughnutSvg = document.getElementById("analytics-doughnut-chart");
-    if (!doughnutSvg) return;
-    while (doughnutSvg.firstChild) doughnutSvg.removeChild(doughnutSvg.firstChild);
-    const legend = document.getElementById("analytics-doughnut-legend");
-    if (legend && legend.parentElement) legend.parentElement.removeChild(legend);
-    const label = document.getElementById("analytics-doughnut-label");
-    if (label && label.parentElement) label.parentElement.removeChild(label);
+  function renderJobTypeDonut(jobs) {
+    const svg = document.getElementById("analytics-jobtype-donut");
+    if (!svg) return;
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    // Render legend below chart
+    const legend = document.getElementById("analytics-jobtype-legend");
+    if (legend) {
+      legend.innerHTML = "";
+      const colors = ["#669636ff", "#A1D76A"];
+      const labels = ["Test Job", "Airflow Job"];
+      labels.forEach((label, i) => {
+        const item = document.createElement("div");
+        item.style.display = "flex";
+        item.style.alignItems = "center";
+        item.innerHTML = `<span style='display:inline-block;width:16px;height:16px;border-radius:4px;background:${colors[i]};margin-right:7px;'></span><span style='font-size:1em;color:#334155;'>${label}</span>`;
+        legend.appendChild(item);
+      });
+    }
     let testCount = 0, airflowCount = 0;
     jobs.forEach(job => {
       const type = parseJobType(job);
@@ -405,7 +523,7 @@
     const data = [testCount, airflowCount];
     const colors = ["#669636ff", "#A1D76A"];
     const labels = ["Test Job", "Airflow Job"];
-    const width = 120, height = 120, radius = 54, innerRadius = 32;
+  const width = 220, height = 220, radius = 90, innerRadius = 50;
     const pie = d3.pie().sort(null);
     const arc = d3.arc().innerRadius(innerRadius).outerRadius(radius);
     const arcs = pie(data);
@@ -471,7 +589,7 @@
     valueAirflow.setAttribute("fill", "#A1D76A");
     valueAirflow.textContent = airflowCount;
     g.appendChild(valueAirflow);
-    doughnutSvg.appendChild(g);
+    svg.appendChild(g);
   }
 
   function renderStackedBarChart(jobs, opts={}) {
@@ -660,9 +778,10 @@
 
   window.renderAnalyticsChart = function(jobs) {
     renderStackedBarChart(jobs || [], {binMinutes: 60});
-    renderTotalJobGauge(jobs || []);
-    renderSuccessRateGauge(jobs || []);
+    renderDualGauge(jobs || []);
     renderJobsHeatmap(jobs || []);
-    renderScatterPlot(jobs || []);
+    renderJobTypeDonut(jobs || []);
+    renderTestJobStatusDonut(jobs || []);
+    renderAirflowJobStatusDonut(jobs || []);
   };
 })();
