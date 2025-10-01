@@ -244,16 +244,17 @@
   </div>
   <div id="tab-content-analytics" style="display:none; min-height:400px;">
     <div id="analytics-chart" class="analytics-chart"></div>
-    <div id="analytics-total-box-row" class="analytics-total-box-row">
+    <div id="analytics-total-box-row" class="analytics-total-box-row flex flex-row items-start mt-2 w-full">
       <div id="analytics-total-box" class="analytics-total-box">
         <span class="analytics-total-label">Jobs Count</span>
         <span id="analytics-total-number" class="analytics-total-number">0</span>
       </div>
       <div id="analytics-doughnut-box" class="analytics-doughnut-box">
+        <span class="analytics-doughnut-title">Test vs. Airflow</span>
         <svg id="analytics-doughnut-chart" width="100%" height="100%" viewBox="0 0 120 120"></svg>
-        <span id="analytics-doughnut-label" class="analytics-doughnut-label">Distribution</span>
+        <span id="analytics-doughnut-label" class="analytics-doughnut-label">Test vs Real</span>
       </div>
-      <div style="flex:1;"></div>
+      <div class="flex-1"></div>
     </div>
   </div>
   </div>

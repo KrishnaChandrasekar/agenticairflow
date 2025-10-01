@@ -115,6 +115,28 @@
         });
         g.appendChild(path);
       });
+
+  // Add split values in the center of the doughnut
+  const valueTest = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  valueTest.setAttribute("x", "0");
+  valueTest.setAttribute("y", "-2");
+  valueTest.setAttribute("text-anchor", "middle");
+  valueTest.setAttribute("font-size", "1.1em");
+  valueTest.setAttribute("font-weight", "700");
+  valueTest.setAttribute("fill", "#669636");
+  valueTest.textContent = testCount;
+  g.appendChild(valueTest);
+
+  const valueAirflow = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  valueAirflow.setAttribute("x", "0");
+  valueAirflow.setAttribute("y", "18");
+  valueAirflow.setAttribute("text-anchor", "middle");
+  valueAirflow.setAttribute("font-size", "1.1em");
+  valueAirflow.setAttribute("font-weight", "700");
+  valueAirflow.setAttribute("fill", "#A1D76A");
+  valueAirflow.textContent = airflowCount;
+  g.appendChild(valueAirflow);
+
       doughnutSvg.appendChild(g);
     }
     const container = document.getElementById("analytics-chart");

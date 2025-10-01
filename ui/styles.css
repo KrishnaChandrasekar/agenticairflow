@@ -1,3 +1,13 @@
+.analytics-doughnut-title {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #64748b;
+    z-index: 2;
+    letter-spacing: 0.01em;
+}
 /* Analytics Tab Styles */
 .analytics-chart {
     width: 100%;
@@ -9,13 +19,6 @@
     justify-content: center;
     border: 1.5px solid #e5e7eb;
 }
-.analytics-total-box-row {
-    display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    margin-top: 8px;
-    width: 100%;
-}
 .analytics-total-box {
     width: 14.28%;
     aspect-ratio: 1/1;
@@ -26,7 +29,7 @@
     align-items: flex-start;
     justify-content: flex-start;
     padding: 12px 0 0 12px;
-    margin-right: 24px;
+    margin-right: 10px;
     position: relative;
 }
 .analytics-total-label {
@@ -61,6 +64,9 @@
     justify-content: center;
     margin-right: 3px;
     position: relative;
+}
+.analytics-doughnut-box svg {
+    margin-left: 10px;
 }
 .analytics-doughnut-label {
     position: absolute;
