@@ -712,14 +712,19 @@
         d3.select(this).attr("fill", "transparent");
         tooltip.style("display", "none");
       });
+    // Animated bars: grow from zero height
     barGroups.selectAll("rect")
       .data(d => d)
       .join("rect")
       .attr("class", "bar-rect")
       .attr("x", d => x(d.data.bin))
+      .attr("y", y(0))
+      .attr("height", 0)
+      .attr("width", x.bandwidth())
+      .transition()
+      .duration(900)
       .attr("y", d => y(d[1]))
-      .attr("height", d => y(d[0]) - y(d[1]))
-      .attr("width", x.bandwidth());
+      .attr("height", d => y(d[0]) - y(d[1]));
     const legend = svg.append("g")
       .attr("transform", `translate(${width + 40},${margin.top + 40})`);
     keys.forEach((k, i) => {
