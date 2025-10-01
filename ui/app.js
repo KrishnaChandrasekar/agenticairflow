@@ -96,6 +96,7 @@ const state = {
 };
 
 let TZ = localStorage.getItem("router_ui_tz") || Intl.DateTimeFormat().resolvedOptions().timeZone;
+window.TZ = TZ;
 
 // ---------- TZ MENU (global only) ----------
 function getSupportedTimezones() {
@@ -137,13 +138,20 @@ function buildTzMenu() {
   menu.addEventListener("click", (e)=>{
     const z = e.target?.dataset?.tz;
     if (!z) return;
-    TZ = z; localStorage.setItem("router_ui_tz", TZ);
+    TZ = z; window.TZ = TZ; localStorage.setItem("router_ui_tz", TZ);
     lab.textContent = formatTzLabel(TZ);
     // Re-render all tables that show date/time columns
     renderJobs(state.jobs);
     renderByAgent(state.jobs);
     if (document.getElementById("tab-content-agents")?.style.display !== "none") {
       renderAgentsDetailTab();
+    }
+    // Also re-render analytics chart if visible
+    const contentAnalytics = document.getElementById("tab-content-analytics");
+    if (contentAnalytics && contentAnalytics.style.display !== "none") {
+      let jobs = (window.state && Array.isArray(window.state.jobs)) ? window.state.jobs : (typeof state !== 'undefined' && Array.isArray(state.jobs) ? state.jobs : []);
+      if (typeof window.filterJobsByTime === 'function') jobs = window.filterJobsByTime(jobs);
+      if (window.renderAnalyticsChart) window.renderAnalyticsChart(jobs);
     }
     close();
   });
@@ -638,6 +646,13 @@ document.addEventListener("DOMContentLoaded", function() {
         close();
         renderJobs(state.jobs);
         renderAgentsDetailTab();
+        // Also update Analytics chart if visible
+        const contentAnalytics = document.getElementById("tab-content-analytics");
+        if (contentAnalytics && contentAnalytics.style.display !== "none") {
+          let jobs = (window.state && Array.isArray(window.state.jobs)) ? window.state.jobs : (typeof state !== 'undefined' && Array.isArray(state.jobs) ? state.jobs : []);
+          if (typeof window.filterJobsByTime === 'function') jobs = window.filterJobsByTime(jobs);
+          if (window.renderAnalyticsChart) window.renderAnalyticsChart(jobs);
+        }
       });
     });
     // Field radio
@@ -647,6 +662,13 @@ document.addEventListener("DOMContentLoaded", function() {
         trLabel.textContent = fmtRangeLabel();
         renderJobs(state.jobs);
         renderAgentsDetailTab();
+        // Also update Analytics chart if visible
+        const contentAnalytics = document.getElementById("tab-content-analytics");
+        if (contentAnalytics && contentAnalytics.style.display !== "none") {
+          let jobs = (window.state && Array.isArray(window.state.jobs)) ? window.state.jobs : (typeof state !== 'undefined' && Array.isArray(state.jobs) ? state.jobs : []);
+          if (typeof window.filterJobsByTime === 'function') jobs = window.filterJobsByTime(jobs);
+          if (window.renderAnalyticsChart) window.renderAnalyticsChart(jobs);
+        }
       });
     });
     // Absolute range
@@ -659,6 +681,13 @@ document.addEventListener("DOMContentLoaded", function() {
       close();
       renderJobs(state.jobs);
       renderAgentsDetailTab();
+      // Also update Analytics chart if visible
+      const contentAnalytics = document.getElementById("tab-content-analytics");
+      if (contentAnalytics && contentAnalytics.style.display !== "none") {
+        let jobs = (window.state && Array.isArray(window.state.jobs)) ? window.state.jobs : (typeof state !== 'undefined' && Array.isArray(state.jobs) ? state.jobs : []);
+        if (typeof window.filterJobsByTime === 'function') jobs = window.filterJobsByTime(jobs);
+        if (window.renderAnalyticsChart) window.renderAnalyticsChart(jobs);
+      }
     });
     document.getElementById('tr-clear-shared').addEventListener('click', function() {
       window.TimeRange.enabled = false;
@@ -666,6 +695,12 @@ document.addEventListener("DOMContentLoaded", function() {
       close();
       renderJobs(state.jobs);
       renderAgentsDetailTab();
+      // Also update Analytics chart if visible
+      const contentAnalytics = document.getElementById("tab-content-analytics");
+      if (contentAnalytics && contentAnalytics.style.display !== "none") {
+        let jobs = (window.state && Array.isArray(window.state.jobs)) ? window.state.jobs : (typeof state !== 'undefined' && Array.isArray(state.jobs) ? state.jobs : []);
+        if (window.renderAnalyticsChart) window.renderAnalyticsChart(jobs);
+      }
     });
     document.getElementById('tr-cancel-shared').addEventListener('click', function() {
       close();
@@ -678,21 +713,48 @@ document.addEventListener("DOMContentLoaded", function() {
 document.addEventListener("DOMContentLoaded", function() {
   const tabJobs = document.getElementById("tab-jobs");
   const tabAgents = document.getElementById("tab-agents");
+  const tabAnalytics = document.getElementById("tab-analytics");
   const contentJobs = document.getElementById("tab-content-jobs");
   const contentAgents = document.getElementById("tab-content-agents");
-  if (tabJobs && tabAgents && contentJobs && contentAgents) {
+  const contentAnalytics = document.getElementById("tab-content-analytics");
+  if (tabJobs && tabAgents && tabAnalytics && contentJobs && contentAgents && contentAnalytics) {
     tabJobs.addEventListener("click", function() {
       tabJobs.classList.add("active");
       tabAgents.classList.remove("active");
+      tabAnalytics.classList.remove("active");
       contentJobs.style.display = "block";
       contentAgents.style.display = "none";
+      contentAnalytics.style.display = "none";
     });
     tabAgents.addEventListener("click", function() {
       tabAgents.classList.add("active");
       tabJobs.classList.remove("active");
+      tabAnalytics.classList.remove("active");
       contentJobs.style.display = "none";
       contentAgents.style.display = "block";
+      contentAnalytics.style.display = "none";
       renderAgentsDetailTab();
+    });
+    tabAnalytics.addEventListener("click", function() {
+      tabAnalytics.classList.add("active");
+      tabJobs.classList.remove("active");
+      tabAgents.classList.remove("active");
+      contentJobs.style.display = "none";
+      contentAgents.style.display = "none";
+      contentAnalytics.style.display = "block";
+      // On first open, default to All Time if not set
+      if (typeof window.TimeRange !== 'undefined') {
+        if (window.TimeRange.enabled !== false) {
+          window.TimeRange.enabled = false;
+          const trLabel = document.getElementById("tr-label-shared");
+          if (trLabel) trLabel.textContent = (typeof fmtRangeLabel==='function' ? fmtRangeLabel() : 'Time filter');
+        }
+      }
+      // Render chart for all jobs (All Time)
+      let jobs = (window.state && Array.isArray(window.state.jobs)) ? window.state.jobs : (typeof state !== 'undefined' && Array.isArray(state.jobs) ? state.jobs : []);
+      if (window.renderAnalyticsChart) {
+        window.renderAnalyticsChart(jobs);
+      }
     });
   }
 });
@@ -932,6 +994,16 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
     updateSubmitButtonState(true);
     await origRefreshAll.apply(this, arguments);
     updateSubmitButtonState(false);
+    // If Analytics tab is visible, re-render chart
+    const analyticsTab = document.getElementById("tab-analytics");
+    const analyticsContent = document.getElementById("tab-content-analytics");
+    if (analyticsTab && analyticsContent && analyticsContent.style.display !== "none") {
+      if (window.renderAnalyticsChart && window.state && Array.isArray(window.state.jobs)) {
+        let jobs = window.state.jobs;
+        if (typeof window.filterJobsByTime === 'function') jobs = window.filterJobsByTime(jobs);
+        window.renderAnalyticsChart(jobs);
+      }
+    }
   };
   updateSubmitButtonState();
   refreshAll();
@@ -1285,6 +1357,8 @@ function toTs(v){
   }
   return NaN;
 }
+// Make toTs available globally for analytics chart
+window.toTs = toTs;
 
 function jobInTimeRange(job){
   if (!window.TimeRange.enabled) return true;

@@ -1,3 +1,228 @@
+/* Flex row for donut chart and legend */
+.analytics-donut-flexrow {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    justify-content: center;
+}
+/* Legend for Job Type Distribution donut chart */
+.analytics-donut-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-left: 18px;
+    justify-content: flex-start;
+    align-items: flex-start;
+    min-width: 120px;
+}
+.analytics-donut-box {
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    margin-top: 16px;
+    margin-bottom: 16px;
+    padding: 18px 0 8px 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+}
+.analytics-donut-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 8px;
+    padding-left: 0;
+}
+.analytics-scatterplot-box {
+    width: 100%;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    margin-top: 16px;
+    margin-bottom: 16px;
+    padding: 18px 0 8px 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+.analytics-scatterplot-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 8px;
+    padding-left: 0;
+}
+.analytics-gauge-box {
+    width: 340px;
+    height: 340px;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    margin-bottom: 12px;
+    padding: 18px 0 8px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.analytics-gauge-title {
+    font-size: 1em;
+    font-weight: 500;
+    color: #334155;
+    margin-bottom: 4px;
+}
+.analytics-heatmap-box {
+    width: 720px;
+    max-width: 100%;
+    height: 280px;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    padding: 18px 0 0 32px; /* reduce bottom padding to 0 */
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+#analytics-heatmap {
+    width: 100%;
+    display: block;
+    height: 340px !important;
+}
+.analytics-heatmap-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 8px;
+    padding-left: 0;
+}
+.analytics-airflowstate-box {
+    width: 28.57%;
+    aspect-ratio: 2/1;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 3px;
+    position: relative;
+}
+.analytics-airflowstate-title {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #64748b;
+    z-index: 2;
+    letter-spacing: 0.01em;
+}
+.analytics-testjobstate-box {
+    width: 28.57%;
+    aspect-ratio: 2/1;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 3px;
+    position: relative;
+}
+.analytics-testjobstate-title {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #64748b;
+    z-index: 2;
+    letter-spacing: 0.01em;
+}
+.analytics-testjobstate-label {
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #64748b;
+    text-align: center;
+    width: 100%;
+}
+.analytics-doughnut-title {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #64748b;
+    z-index: 2;
+    letter-spacing: 0.01em;
+}
+/* Analytics Tab Styles */
+.analytics-chart {
+    width: 100%;
+    height: 340px;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    min-height: 340px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.analytics-total-gauge-box {
+    width: 14.28%;
+    aspect-ratio: 1/1;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin-right: 4px;
+    position: relative;
+}
+.analytics-total-label {
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #64748b;
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 2;
+}
+.analytics-donut-box {
+    width: 28.57%;
+    aspect-ratio: 2/1;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 3px;
+    margin-top: 4px; /* further reduced by 1/3rd from 6px */
+    position: relative;
+}
+.analytics-doughnut-box svg {
+    margin-left: 10px;
+}
+.analytics-doughnut-label {
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #64748b;
+    text-align: center;
+    width: 100%;
+}
 /* Highlight agent row on Deregister button hover */
 .agent-row-highlight {
     background-color: #fef3c7 !important; /* Tailwind amber-100 */
