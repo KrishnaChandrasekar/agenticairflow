@@ -1,3 +1,56 @@
+.analytics-airflowstate-box {
+    width: 28.57%;
+    aspect-ratio: 2/1;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 3px;
+    position: relative;
+}
+.analytics-airflowstate-title {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #64748b;
+    z-index: 2;
+    letter-spacing: 0.01em;
+}
+.analytics-testjobstate-box {
+    width: 28.57%;
+    aspect-ratio: 2/1;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 3px;
+    position: relative;
+}
+.analytics-testjobstate-title {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #64748b;
+    z-index: 2;
+    letter-spacing: 0.01em;
+}
+.analytics-testjobstate-label {
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #64748b;
+    text-align: center;
+    width: 100%;
+}
 .analytics-doughnut-title {
     position: absolute;
     top: 12px;
@@ -29,7 +82,7 @@
     align-items: flex-start;
     justify-content: flex-start;
     padding: 12px 0 0 12px;
-    margin-right: 10px;
+    margin-right: 4px;
     position: relative;
 }
 .analytics-total-label {
