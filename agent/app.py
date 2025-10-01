@@ -62,9 +62,19 @@ def _ensure_home(job_id: str) -> str:
     return p
 
 
-def _writeln(path: str, text: str):
-    with open(path, "a", encoding="utf-8", errors="ignore") as f:
-        f.write(text)
+import time as _time
+def _writeln(path: str, text: str, retries: int = 3):
+    for attempt in range(retries):
+        try:
+            with open(path, "a", encoding="utf-8", errors="ignore") as f:
+                f.write(text)
+                f.flush()
+            break
+        except Exception as e:
+            if attempt < retries - 1:
+                _time.sleep(0.05)
+            else:
+                print(f"[agent] log write failed: {e}", flush=True)
 
 
 def _write_text(path: str, text: str):
@@ -176,6 +186,9 @@ def run():
     _writeln(logp, f"[agent] shell={SHELL}\n")
     _writeln(logp, f"[agent] job_id={job_id}\n")
     _writeln(logp, f"[agent] cwd={cwd}\n")
+    _writeln(logp, f"[agent] command={cmd}\n")
+    _writeln(logp, f"[agent] env={json.dumps(extra_env)}\n")
+    _writeln(logp, f"[agent] status=PENDING\n")
 
     # Validate cwd
     if not os.path.isdir(cwd):
@@ -217,6 +230,7 @@ def run():
         subprocess.Popen([SHELL, "-lc", launch], env=env)
     except Exception as e:
         _writeln(logp, f"[agent] spawn exception: {e}\n")
+        _writeln(logp, f"[agent] status=FAILED\n")
         _write_text(rcp, "255\n")
         return jsonify({"ok": False, "log_path": logp}), 200
 
@@ -252,15 +266,34 @@ def status(job_id: str):
         except Exception:
             pid = None
 
+    statusp = os.path.join(home, "status.txt")
+    def _last_status():
+        try:
+            with open(statusp, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read().strip()
+        except Exception:
+            return None
+
+    def _write_status(val):
+        with open(statusp, "w", encoding="utf-8", errors="ignore") as f:
+            f.write(val)
+
     if os.path.exists(rcp):
         try:
             rc = int(open(rcp, "r", encoding="utf-8", errors="ignore").read().strip())
         except Exception:
             rc = 1
-        return jsonify({"status": "SUCCEEDED" if rc == 0 else "FAILED", "job_id": job_id, "log_path": logp, "rc": rc})
+        status_val = "SUCCEEDED" if rc == 0 else "FAILED"
+        if _last_status() != status_val:
+            _writeln(logp, f"[agent] status={status_val}\n")
+            _write_status(status_val)
+        return jsonify({"status": status_val, "job_id": job_id, "log_path": logp, "rc": rc})
 
     # If no rc yet, only then check pid/alive
     if pid and _alive(pid):
+        if _last_status() != "RUNNING":
+            _writeln(logp, f"[agent] status=RUNNING\n")
+            _write_status("RUNNING")
         return jsonify({"status": "RUNNING", "job_id": job_id, "log_path": logp, "rc": None})
 
 

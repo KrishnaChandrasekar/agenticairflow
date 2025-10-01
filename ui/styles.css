@@ -1,3 +1,58 @@
+/* Highlight agent row on Deregister button hover */
+.agent-row-highlight {
+    background-color: #fef3c7 !important; /* Tailwind amber-100 */
+    transition: background 0.15s;
+}
+/* --- Tab Navigation Styles --- */
+.tabs-container {
+    display: flex;
+    border-bottom: 2px solid #e5e7eb; /* Tailwind slate-200 */
+    margin-bottom: 1rem;
+}
+.tab-btn {
+    background: none;
+    border: none;
+    outline: none;
+    padding: 0.75rem 1.5rem;
+    margin-bottom: -2px;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #64748b; /* slate-500 */
+    border-bottom: 2px solid transparent;
+    border-radius: 0.5rem 0.5rem 0 0;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    cursor: pointer;
+}
+.tab-btn.active, .tab-btn.bg-blue-600 {
+    color: #0d2b4f !important; /* blue-900 */
+    background: #fff !important;
+    border-bottom: 2px solid #2563eb !important; /* blue-600 */
+    z-index: 1;
+}
+.tab-btn:not(.active):hover {
+    background: #f1f5f9;
+    color: #334155;
+}
+/* Clipboard copy button for logs */
+.log-copy-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 4px;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+}
+.log-copy-btn span {
+    transition: color 0.2s;
+}
+.log-copy-btn:hover span {
+    color: #4caf50;
+}
+.log-copy-btn.copied {
+    background: #e0f7e9;
+}
 /* Highlight effect for all clickable buttons */
 button:hover, .hover\:bg-slate-100:hover {
     background-color: #cbd5e1 !important; /* Tailwind slate-200, darker */

@@ -1,3 +1,63 @@
+// Pagination state for Agents tab
+const agentsPaging = {
+  page: 1,
+  pageSize: 15,
+};
+
+function applyAgentsPagination(list) {
+  const total = list.length, size = agentsPaging.pageSize;
+  const pages = Math.max(1, Math.ceil(total / size));
+  if (agentsPaging.page > pages) agentsPaging.page = pages;
+  const start = (agentsPaging.page - 1) * size, end = start + size;
+  const info = document.getElementById("agents-page-info");
+  if (info) {
+    const from = total ? start + 1 : 0, to = Math.min(end, total);
+    info.textContent = `${from}-${to} out of ${total}`;
+  }
+  return list.slice(start, end);
+}
+
+function attachAgentsPagingHandlers() {
+  const ps = document.getElementById("agents-page-size");
+  if (ps) {
+    ps.value = String(agentsPaging.pageSize);
+    ps.onchange = () => {
+      agentsPaging.pageSize = parseInt(ps.value, 10) || 15;
+      agentsPaging.page = 1;
+      renderAgentsDetailTab();
+    };
+  }
+  const prev = document.getElementById("agents-prev-page");
+  const next = document.getElementById("agents-next-page");
+  if (prev) prev.onclick = () => {
+    if (agentsPaging.page > 1) {
+      agentsPaging.page--;
+      renderAgentsDetailTab();
+    }
+  };
+  if (next) next.onclick = () => {
+    // We need to know the total number of agents (after filtering)
+    const total = (state.agents || []).length;
+    const pages = Math.max(1, Math.ceil(total / agentsPaging.pageSize));
+    if (agentsPaging.page < pages) {
+      agentsPaging.page++;
+      renderAgentsDetailTab();
+    }
+  };
+}
+// Clipboard copy for job drawer logs
+document.addEventListener("DOMContentLoaded", function() {
+  const copyBtn = document.getElementById("drawer-log-copy");
+  const logPre = document.getElementById("drawer-log");
+  if (copyBtn && logPre) {
+    copyBtn.addEventListener("click", function() {
+      const text = logPre.innerText || logPre.textContent || "";
+      navigator.clipboard.writeText(text);
+      copyBtn.classList.add("copied");
+      setTimeout(() => copyBtn.classList.remove("copied"), 1200);
+    });
+  }
+});
 // ---- TimeRange early bootstrap (ensures availability before init) ----
 (function(){
   if (!window.TimeRange) {
@@ -79,7 +139,12 @@ function buildTzMenu() {
     if (!z) return;
     TZ = z; localStorage.setItem("router_ui_tz", TZ);
     lab.textContent = formatTzLabel(TZ);
-    renderAgents(state.agents); renderJobs(state.jobs); renderByAgent(state.jobs);
+    // Re-render all tables that show date/time columns
+    renderJobs(state.jobs);
+    renderByAgent(state.jobs);
+    if (document.getElementById("tab-content-agents")?.style.display !== "none") {
+      renderAgentsDetailTab();
+    }
     close();
   });
 
@@ -279,8 +344,8 @@ function renderJobs(allJobs){
   renderFilterChips();
   const rows = pageItems.map(j => {
     const st = j.status || "-";
-    const created = `${fmtDate(j.created_at)} · ${fmtAgo(j.created_at)}`;
-    const updated = `${fmtDate(j.updated_at)} · ${fmtAgo(j.updated_at)}`;
+    const created = `${fmtDate(j.created_at, TZ)} · ${fmtAgo(j.created_at)}`;
+    const updated = `${fmtDate(j.updated_at, TZ)} · ${fmtAgo(j.updated_at)}`;
     const labels = Object.entries(j.labels || {}).map(([k,v]) => `<span class="chip bg-slate-100">${k}:${v}</span>`).join(" ");
     return `<tr class="border-b hover:bg-slate-50">
       <td class="p-2 font-mono">${j.job_id}</td>
@@ -376,22 +441,45 @@ function startLogFollow(job_id){
   state.logTimer = setInterval(()=>{ if ($("log-autorefresh")?.checked) follow(); }, 2000);
 }
 
-// ---------- agents detail dialog ----------
-async function renderAgentsDetailAndOpen(){
+// ---------- agents detail tab with shared time range ----------
+function agentJobInTimeRange(job) {
+  // Use shared TimeRange
+  if (!window.TimeRange.enabled) return true;
+  const field = window.TimeRange.field || 'updated_at';
+  const v = job[field];
+  const t = toTs(v);
+  if (isNaN(t)) return false;
+  if (window.TimeRange.mode === 'relative') {
+    const to = Date.now();
+    const from = to - window.TimeRange.relMins * 60 * 1000;
+    return t >= from && t <= to;
+  } else {
+    const { fromMs, toMs } = window.TimeRange.abs;
+    if (fromMs && t < fromMs) return false;
+    if (toMs && t > toMs) return false;
+    return true;
+  }
+}
+
+async function renderAgentsDetailTab(){
   const body=$("agents-detail-body"); if (!body) return;
+  const colTitle = document.getElementById("agents-jobs-col-title");
+  if (colTitle) colTitle.textContent = `Jobs (${fmtRangeLabel()})`;
   const counts = {};
   await Promise.all(state.agents.map(async a => {
     try{
-      const j = await fetchJSON(`${BASE}/jobs?limit=1000&agent_id=${encodeURIComponent(a.agent_id)}&since_hours=24`);
+      const j = await fetchJSON(`${BASE}/jobs?limit=1000&agent_id=${encodeURIComponent(a.agent_id)}`);
       const arr = Array.isArray(j) ? j : (j.jobs||[]);
-      counts[a.agent_id] = Array.isArray(arr) ? arr.length : 0;
+      counts[a.agent_id] = arr.filter(agentJobInTimeRange).length;
     } catch { counts[a.agent_id] = 0; }
   }));
   const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
-  body.innerHTML = state.agents.map(a => {
+  // Apply pagination to agents list
+  const pagedAgents = applyAgentsPagination(state.agents || []);
+  body.innerHTML = pagedAgents.map((a, idx) => {
     const labels = Object.entries(a.labels||{}).map(([k,v]) => `<span class=\"chip bg-slate-100\">${k}:${v}</span>`).join(" ");
     let status = "Offline";
-  let lastHbMs = toTs(a.last_heartbeat);
+    let lastHbMs = toTs(a.last_heartbeat);
     let nowMs = Date.now();
     if (a.active && lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
       status = "Registered";
@@ -399,16 +487,45 @@ async function renderAgentsDetailAndOpen(){
       status = "Discovered";
     }
     // Add Deregister button only for Registered agents
-    const deregBtn = (status === "Registered") ? `<button class=\"px-2 py-1 text-xs bg-red-200 rounded\" onclick=\"deregisterAgent('${a.agent_id}')\">Deregister</button>` : "";
-    return `<tr>
-      <td class=\"p-2 font-mono\">${a.agent_id}</td>
-      <td class=\"p-2 font-mono\">${a.url}</td>
-      <td class=\"p-2\">${labels||"-"}</td>
-      <td class=\"p-2\">${status} ${deregBtn}</td>
-      <td class=\"p-2 text-slate-500\">${fmtDate(a.last_heartbeat)} · ${fmtAgo(a.last_heartbeat)}</td>
-      <td class=\"p-2\">${counts[a.agent_id] ?? 0}</td>
-    </tr>`;
+    const rowId = `agent-row-${idx}`;
+    const deregBtn = (status === "Registered") ? `<button class=\"px-2 py-1 text-xs bg-red-200 rounded agent-dereg-btn\" data-rowid=\"${rowId}\" onclick=\"deregisterAgent('${a.agent_id}')\">Deregister</button>` : "";
+  // Add a span with a unique id for dynamic update, monospace and min-width for stable layout
+  return `<tr id=\"${rowId}\" class=\"border-b border-slate-200\">
+    <td class=\"p-2 font-mono\">${a.agent_id}</td>
+    <td class=\"p-2 font-mono\">${a.url}</td>
+    <td class=\"p-2\">${labels||"-"}</td>
+    <td class=\"p-2\">${status}</td>
+    <td class=\"p-2 text-slate-500\"><span id=\"agent-hb-${a.agent_id}\">${fmtDate(a.last_heartbeat, TZ)} · ${fmtAgo(a.last_heartbeat)}</span></td>
+    <td class=\"p-2\">${counts[a.agent_id] ?? 0}</td>
+    <td class="p-2">${deregBtn}</td>
+  </tr>`;
   }).join("");
+
+  // Set up dynamic update for Heartbeat column (only for visible agents)
+  if (window.__agent_hb_interval) clearInterval(window.__agent_hb_interval);
+  window.__agent_hb_interval = setInterval(() => {
+    (pagedAgents || []).forEach(a => {
+      const el = document.getElementById(`agent-hb-${a.agent_id}`);
+      if (el) {
+        el.textContent = `${fmtDate(a.last_heartbeat, TZ)} · ${fmtAgo(a.last_heartbeat)}`;
+      }
+    });
+  }, 1000);
+
+  // Attach pagination handlers (safe to call multiple times)
+  attachAgentsPagingHandlers();
+
+  // Add hover effect for Deregister button
+  setTimeout(() => {
+    document.querySelectorAll('.agent-dereg-btn').forEach(btn => {
+      const rowId = btn.getAttribute('data-rowid');
+      const row = document.getElementById(rowId);
+      if (row) {
+        btn.addEventListener('mouseenter', () => row.classList.add('agent-row-highlight'));
+        btn.addEventListener('mouseleave', () => row.classList.remove('agent-row-highlight'));
+      }
+    });
+  }, 0);
 
   // Attach deregisterAgent to window
   window.deregisterAgent = async function(agent_id) {
@@ -435,7 +552,7 @@ async function renderAgentsDetailAndOpen(){
           // Refresh agents table only (not whole page)
           const agents = await fetchAgents();
           state.agents = agents;
-          renderAgentsDetailAndOpen();
+          renderAgentsDetailTab();
         } else {
           banner.className = "mb-2 px-3 py-2 rounded text-sm bg-red-50 text-red-800 border border-red-200";
           banner.textContent = `Error: ${data.error || "Unknown error"}`;
@@ -449,11 +566,110 @@ async function renderAgentsDetailAndOpen(){
       banner.style.display = "none";
     };
   };
-  $("agents-dialog")?.showModal();
 }
-$("agents-open")?.addEventListener("click", renderAgentsDetailAndOpen);
-$("agents-close")?.addEventListener("click", () => $("agents-dialog")?.close());
-$("submit-open")?.addEventListener("click", () => $("submit-dialog")?.showModal());
+
+
+// Shared Time Range UI logic for both tabs
+document.addEventListener("DOMContentLoaded", function() {
+  const trBtn = document.getElementById("tr-btn-shared");
+  const trPop = document.getElementById("tr-pop-shared");
+  const trLabel = document.getElementById("tr-label-shared");
+  const fromInput = document.getElementById('tr-from-shared');
+  const toInput = document.getElementById('tr-to-shared');
+  if (trBtn && trPop && trLabel) {
+    const open = () => { trPop.classList.remove("hidden"); };
+    const close = () => { trPop.classList.add("hidden"); };
+    trBtn.addEventListener("mousedown", e => e.preventDefault());
+    trBtn.addEventListener("click", e => { e.stopPropagation(); open(); });
+    document.addEventListener("click", e => { if (!trPop.classList.contains("hidden") && !trPop.contains(e.target) && e.target !== trBtn) close(); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+    // Quick ranges
+    trPop.querySelectorAll('.tr-q-shared').forEach(btn => {
+      btn.addEventListener('click', function() {
+        window.TimeRange.enabled = true;
+        window.TimeRange.mode = 'relative';
+        if (this.dataset.mins) window.TimeRange.relMins = parseInt(this.dataset.mins);
+        else if (this.dataset.today) { window.TimeRange.mode = 'absolute';
+          const now = new Date();
+          const from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          window.TimeRange.abs.fromMs = from.getTime();
+          window.TimeRange.abs.toMs = now.getTime();
+        } else if (this.dataset.yesterday) {
+          window.TimeRange.mode = 'absolute';
+          const now = new Date();
+          const from = new Date(now.getFullYear(), now.getMonth(), now.getDate()-1);
+          const to = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          window.TimeRange.abs.fromMs = from.getTime();
+          window.TimeRange.abs.toMs = to.getTime();
+        }
+        trLabel.textContent = fmtRangeLabel();
+        close();
+        renderJobs(state.jobs);
+        renderAgentsDetailTab();
+      });
+    });
+    // Field radio
+    trPop.querySelectorAll('input[name="tr-field-shared"]').forEach(radio => {
+      radio.addEventListener('change', function() {
+        window.TimeRange.field = this.value;
+        trLabel.textContent = fmtRangeLabel();
+        renderJobs(state.jobs);
+        renderAgentsDetailTab();
+      });
+    });
+    // Absolute range
+    document.getElementById('tr-apply-shared').addEventListener('click', function() {
+      window.TimeRange.enabled = true;
+      window.TimeRange.mode = 'absolute';
+      window.TimeRange.abs.fromMs = fromInput && fromInput.value ? (new Date(fromInput.value)).getTime() : null;
+      window.TimeRange.abs.toMs = toInput && toInput.value ? (new Date(toInput.value)).getTime() : null;
+      trLabel.textContent = fmtRangeLabel();
+      close();
+      renderJobs(state.jobs);
+      renderAgentsDetailTab();
+    });
+    document.getElementById('tr-clear-shared').addEventListener('click', function() {
+      window.TimeRange.enabled = false;
+      trLabel.textContent = fmtRangeLabel();
+      close();
+      renderJobs(state.jobs);
+      renderAgentsDetailTab();
+    });
+    document.getElementById('tr-cancel-shared').addEventListener('click', function() {
+      close();
+    });
+    trLabel.textContent = fmtRangeLabel();
+  }
+});
+
+// Tab switching logic
+document.addEventListener("DOMContentLoaded", function() {
+  const tabJobs = document.getElementById("tab-jobs");
+  const tabAgents = document.getElementById("tab-agents");
+  const contentJobs = document.getElementById("tab-content-jobs");
+  const contentAgents = document.getElementById("tab-content-agents");
+  if (tabJobs && tabAgents && contentJobs && contentAgents) {
+    tabJobs.addEventListener("click", function() {
+      tabJobs.classList.add("active");
+      tabAgents.classList.remove("active");
+      contentJobs.style.display = "block";
+      contentAgents.style.display = "none";
+    });
+    tabAgents.addEventListener("click", function() {
+      tabAgents.classList.add("active");
+      tabJobs.classList.remove("active");
+      contentJobs.style.display = "none";
+      contentAgents.style.display = "block";
+      renderAgentsDetailTab();
+    });
+  }
+});
+$("submit-open")?.addEventListener("click", () => {
+  const agentSel = $("tj-agent");
+  if (agentSel) agentSel.value = "";
+  updateSubmitButtonState();
+  $("submit-dialog")?.showModal();
+});
 $("submit-close")?.addEventListener("click", () => $("submit-dialog")?.close());
 
 // ---------- submit test job ----------
@@ -608,27 +824,55 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
   // --- Submit Test Job button enable/disable logic ---
   const tjAgent = $("tj-agent");
   const tjSend = $("tj-send");
-  function updateSubmitButtonState() {
+  function updateSubmitButtonState(isRefreshing = false) {
     if (!tjAgent || !tjSend) return;
+    const banner = document.getElementById("tj-agent-status-banner");
     const selectedId = tjAgent.value.trim();
+    // Spinner HTML
+    const spinner = '<span class="inline-block align-middle ml-2 animate-spin" style="width:1em;height:1em;border:2px solid #cbd5e1;border-top:2px solid #64748b;border-radius:50%;border-right-color:transparent;"></span>';
+    // Read cache
+    let agentStatusCache = {};
+    try { agentStatusCache = JSON.parse(localStorage.getItem("agentStatusCache") || '{}'); } catch {}
+    let status = "Offline";
+    let colorClass = "bg-red-50 text-red-700 border border-red-200";
     if (!selectedId) {
       tjSend.disabled = false;
       tjSend.classList.remove("opacity-50", "cursor-not-allowed");
+      if (banner) {
+        banner.classList.add("hidden");
+        banner.textContent = "";
+      }
       return;
     }
-    const agent = (state.agents||[]).find(a => a.agent_id === selectedId);
-    let status = "Offline";
-    if (agent) {
+    // Use cache if no agent info yet
+    let agent = (state.agents||[]).find(a => a.agent_id === selectedId);
+    let fromCache = false;
+    if (!agent && agentStatusCache[selectedId]) {
+      status = agentStatusCache[selectedId].status;
+      colorClass = agentStatusCache[selectedId].colorClass;
+      fromCache = true;
+    } else if (agent) {
       const lastHbMs = typeof toTs === 'function' ? toTs(agent.last_heartbeat) : (agent.last_heartbeat ? new Date(agent.last_heartbeat).getTime() : 0);
       const nowMs = Date.now();
       const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000;
       if (agent.active && lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
         status = "Registered";
+        colorClass = "bg-green-50 text-green-800 border border-green-200";
       } else if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
         status = "Discovered";
-      } else {
-        status = "Offline";
+        colorClass = "bg-yellow-50 text-yellow-800 border border-yellow-200";
       }
+      // Update cache
+      agentStatusCache[selectedId] = { status, colorClass, ts: Date.now() };
+      localStorage.setItem("agentStatusCache", JSON.stringify(agentStatusCache));
+    }
+    if (banner) {
+      banner.className = `mb-2 px-3 py-2 rounded text-sm ${colorClass}`;
+      let txt = selectedId ? `Agent status: ${selectedId} is ${status}` : `Agent status: ${status}`;
+      // Only show spinner if refreshing and using cache (i.e., not after fresh data)
+      if (isRefreshing && fromCache) txt += spinner;
+      banner.innerHTML = txt;
+      banner.classList.remove("hidden");
     }
     if (status === "Registered") {
       tjSend.disabled = false;
@@ -638,12 +882,14 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
       tjSend.classList.add("opacity-50", "cursor-not-allowed");
     }
   }
-  tjAgent?.addEventListener("change", updateSubmitButtonState);
+  tjAgent?.addEventListener("change", () => updateSubmitButtonState());
   // Also update on refreshAll (agents list changes)
   const origRefreshAll = refreshAll;
   window.refreshAll = async function() {
+    // Show spinner only if cache is being used
+    updateSubmitButtonState(true);
     await origRefreshAll.apply(this, arguments);
-    updateSubmitButtonState();
+    updateSubmitButtonState(false);
   };
   updateSubmitButtonState();
   refreshAll();

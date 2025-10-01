@@ -195,6 +195,50 @@ services:
     - agentic_net
     restart: unless-stopped
 
+  go_agent_vm1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.go-agent
+    environment:
+      AGENT_ID: go_vm1
+      ROUTER_URL: http://router:8000
+      AGENT_TOKEN: agent-secret
+      AGENT_LABELS: '{"os":"linux","zone":"go"}'
+      SELF_URL: http://go_agent_vm1:8001
+      AGENT_AUTO_REGISTER: 'true'
+      AGENT_HEARTBEAT_SECONDS: '10'
+    depends_on:
+    - router
+    volumes:
+    - go_agent_vm1_jobs:/app/agent_jobs
+    ports:
+    - 8011:8001
+    networks:
+    - agentic_net
+    restart: unless-stopped
+
+  go_agent_vm2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.go-agent
+    environment:
+      AGENT_ID: go_vm2
+      ROUTER_URL: http://router:8000
+      AGENT_TOKEN: agent-secret
+      AGENT_LABELS: '{"os":"linux","zone":"go"}'
+      SELF_URL: http://go_agent_vm2:8001
+      AGENT_AUTO_REGISTER: 'true'
+      AGENT_HEARTBEAT_SECONDS: '10'
+    depends_on:
+    - router
+    volumes:
+    - go_agent_vm2_jobs:/app/agent_jobs
+    ports:
+    - 8012:8001
+    networks:
+    - agentic_net
+    restart: unless-stopped
+
   agent_vm3:
     build:
       context: .
@@ -249,3 +293,5 @@ volumes:
   agent_vm2_jobs: {}
   agent_vm3_jobs: {}
   agent_vm4_jobs: {}
+  go_agent_vm1_jobs: {}
+  go_agent_vm2_jobs: {}

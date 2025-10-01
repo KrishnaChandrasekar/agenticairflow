@@ -507,12 +507,7 @@ def status(job_id: str):
             if st.get("status") in ("SUCCEEDED", "FAILED"):
                 print(f"[ROUTER DEBUG] Updating DB for job {job_id}: status={st.get('status')} rc={st.get('rc')}", file=sys.stderr)
                 j.status = st["status"]
-                try:
-                    rc_val = st.get("rc", 1)
-                    j.rc = int(rc_val) if rc_val is not None else 1
-                except Exception as e:
-                    print(f"[ROUTER DEBUG] RC cast error for job {job_id}: {e}, value={st.get('rc')}", file=sys.stderr)
-                    j.rc = 1
+                j.rc = st.get("rc", 1)
                 j.log_path = st.get("log_path", j.log_path)
                 if not j.agent_id:
                     j.agent_id = agent.agent_id

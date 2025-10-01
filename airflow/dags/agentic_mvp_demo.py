@@ -13,13 +13,13 @@ with DAG(
     vm1_ok = AgenticSSHOperator(
         task_id="vm1_ok",
         agent_id="vm1",
-        command="echo 'vm1 starting'; for i in 1 2 3 4 5; do echo tick:$i; sleep 1; done; echo 'vm1 done'",
+        command="echo 'vm1 starting'; for i in 1 2 3 4 5; do echo tick:$i; sleep 2; done; echo 'vm1 done'",
         cwd="/",
     )
     vm2_ok = AgenticSSHOperator(
         task_id="vm2_ok",
         agent_id="vm2",
-        command="echo 'vm2 starting'; for i in 1 2 3 4 5; do echo tick:$i; sleep 1; done; echo 'vm2 done'",
+        command="echo 'vm2 starting'; for i in 1 2 3 4 5; do echo tick:$i; sleep 10; done; echo 'vm2 done'",
         cwd="/",
     )
     vm4_fail = AgenticSSHOperator(
