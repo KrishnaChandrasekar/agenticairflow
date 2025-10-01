@@ -664,7 +664,12 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   }
 });
-$("submit-open")?.addEventListener("click", () => $("submit-dialog")?.showModal());
+$("submit-open")?.addEventListener("click", () => {
+  const agentSel = $("tj-agent");
+  if (agentSel) agentSel.value = "";
+  updateSubmitButtonState();
+  $("submit-dialog")?.showModal();
+});
 $("submit-close")?.addEventListener("click", () => $("submit-dialog")?.close());
 
 // ---------- submit test job ----------
@@ -819,10 +824,17 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
   // --- Submit Test Job button enable/disable logic ---
   const tjAgent = $("tj-agent");
   const tjSend = $("tj-send");
-  function updateSubmitButtonState() {
+  function updateSubmitButtonState(isRefreshing = false) {
     if (!tjAgent || !tjSend) return;
     const banner = document.getElementById("tj-agent-status-banner");
     const selectedId = tjAgent.value.trim();
+    // Spinner HTML
+    const spinner = '<span class="inline-block align-middle ml-2 animate-spin" style="width:1em;height:1em;border:2px solid #cbd5e1;border-top:2px solid #64748b;border-radius:50%;border-right-color:transparent;"></span>';
+    // Read cache
+    let agentStatusCache = {};
+    try { agentStatusCache = JSON.parse(localStorage.getItem("agentStatusCache") || '{}'); } catch {}
+    let status = "Offline";
+    let colorClass = "bg-red-50 text-red-700 border border-red-200";
     if (!selectedId) {
       tjSend.disabled = false;
       tjSend.classList.remove("opacity-50", "cursor-not-allowed");
@@ -832,10 +844,14 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
       }
       return;
     }
-    const agent = (state.agents||[]).find(a => a.agent_id === selectedId);
-    let status = "Offline";
-    let colorClass = "bg-red-50 text-red-700 border border-red-200";
-    if (agent) {
+    // Use cache if no agent info yet
+    let agent = (state.agents||[]).find(a => a.agent_id === selectedId);
+    let fromCache = false;
+    if (!agent && agentStatusCache[selectedId]) {
+      status = agentStatusCache[selectedId].status;
+      colorClass = agentStatusCache[selectedId].colorClass;
+      fromCache = true;
+    } else if (agent) {
       const lastHbMs = typeof toTs === 'function' ? toTs(agent.last_heartbeat) : (agent.last_heartbeat ? new Date(agent.last_heartbeat).getTime() : 0);
       const nowMs = Date.now();
       const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000;
@@ -846,14 +862,16 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
         status = "Discovered";
         colorClass = "bg-yellow-50 text-yellow-800 border border-yellow-200";
       }
+      // Update cache
+      agentStatusCache[selectedId] = { status, colorClass, ts: Date.now() };
+      localStorage.setItem("agentStatusCache", JSON.stringify(agentStatusCache));
     }
     if (banner) {
       banner.className = `mb-2 px-3 py-2 rounded text-sm ${colorClass}`;
-      if (selectedId) {
-        banner.textContent = `Agent status: ${selectedId} is ${status}`;
-      } else {
-        banner.textContent = `Agent status: ${status}`;
-      }
+      let txt = selectedId ? `Agent status: ${selectedId} is ${status}` : `Agent status: ${status}`;
+      // Only show spinner if refreshing and using cache (i.e., not after fresh data)
+      if (isRefreshing && fromCache) txt += spinner;
+      banner.innerHTML = txt;
       banner.classList.remove("hidden");
     }
     if (status === "Registered") {
@@ -864,12 +882,14 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
       tjSend.classList.add("opacity-50", "cursor-not-allowed");
     }
   }
-  tjAgent?.addEventListener("change", updateSubmitButtonState);
+  tjAgent?.addEventListener("change", () => updateSubmitButtonState());
   // Also update on refreshAll (agents list changes)
   const origRefreshAll = refreshAll;
   window.refreshAll = async function() {
+    // Show spinner only if cache is being used
+    updateSubmitButtonState(true);
     await origRefreshAll.apply(this, arguments);
-    updateSubmitButtonState();
+    updateSubmitButtonState(false);
   };
   updateSubmitButtonState();
   refreshAll();
