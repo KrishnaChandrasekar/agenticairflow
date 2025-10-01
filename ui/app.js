@@ -718,11 +718,18 @@ async function submitTestJob(){
   delete routingLabels["job-type"];
   const route = agent ? { agent_id: agent } : { labels: routingLabels };
   const payload = { command: cmd, labels };
-  const out=$("tj-out"); if(out) out.textContent = "submitting...";
-  try{
-    const r = await fetch(`${BASE}/submit`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ job: payload, route }) });
+  const out = $("tj-out"); if (out) out.textContent = "submitting...";
+  const banner = document.getElementById("tj-agent-status-banner");
+  // Only clear previous agent status banner, not for test job submit message
+  if (banner) {
+    banner.classList.add("hidden");
+    banner.textContent = "";
+    banner.className = "hidden mb-2 px-3 py-2 rounded text-sm";
+  }
+  try {
+    const r = await fetch(`${BASE}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job: payload, route }) });
     const text = await r.text();
-    if(out) out.textContent = text;
+    if (out) out.textContent = text;
     refreshAll();
     // Try to extract job_id from response (robust)
     let jobId = "";
@@ -742,6 +749,7 @@ async function submitTestJob(){
         testJobIds.push(jobId);
         localStorage.setItem("testJobIds", JSON.stringify(testJobIds));
       }
+  // (Removed) No test job submitted message display
       let pollCount = 0;
       let lastStatus = "RUNNING";
       const pollStatus = async () => {
@@ -751,7 +759,7 @@ async function submitTestJob(){
           const statusData = await statusResp.json();
           // Update job in state.jobs
           let updated = false;
-          state.jobs = (state.jobs||[]).map(j => {
+          state.jobs = (state.jobs || []).map(j => {
             if (String(j.job_id) === String(jobId)) {
               if (j.status !== statusData.status) updated = true;
               lastStatus = statusData.status;
@@ -775,7 +783,9 @@ async function submitTestJob(){
       };
       pollStatus();
     }
-  }catch(e){ if(out) out.textContent = "error: "+e.message; }
+  } catch (e) {
+    if (out) out.textContent = "error: " + e.message;
+  }
 }
 $("tj-send")?.addEventListener("click", submitTestJob);
 
