@@ -51,7 +51,7 @@
     const stateKeys = Object.keys(stateCounts);
     const data = stateKeys.map(k => stateCounts[k]);
     const stateColors = stateKeys.map(k =>
-      k === "FAILED" ? "#f16161ff" :
+      k === "FAILED" ? "#ef7f7fff" :
       k === "SUCCEEDED" ? "#A1D76A" :
       k === "RUNNING" ? "#8ebbf3ff" :
       k === "QUEUED" ? "#a2b7cfff" :
@@ -103,6 +103,18 @@
         tooltip.style.display = "none";
       });
       g.appendChild(path);
+
+      // Add value label to the center of each arc
+      const arcCentroid = arc.centroid(d);
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", arcCentroid[0]);
+      text.setAttribute("y", arcCentroid[1] + 4); // vertical centering tweak
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("font-size", "1em");
+      text.setAttribute("font-weight", "600");
+      text.setAttribute("fill", "#222");
+      text.textContent = data[i];
+      g.appendChild(text);
     });
     airflowJobStateSvg.appendChild(g);
   }
@@ -172,6 +184,18 @@
         tooltip.style.display = "none";
       });
       g.appendChild(path);
+
+      // Add value label to the center of each arc
+      const arcCentroid = arc.centroid(d);
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", arcCentroid[0]);
+      text.setAttribute("y", arcCentroid[1] + 4); // vertical centering tweak
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("font-size", "1em");
+      text.setAttribute("font-weight", "600");
+      text.setAttribute("fill", "#222");
+      text.textContent = data[i];
+      g.appendChild(text);
     });
     testJobStateSvg.appendChild(g);
   }
