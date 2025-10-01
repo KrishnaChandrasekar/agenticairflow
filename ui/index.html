@@ -18,7 +18,7 @@
   <div class="max-w-screen-2xl mx-auto p-4 space-y-4">
 
     <header class="flex items-center justify-between">
-  <h1 class="text-2xl font-semibold ml-4" style="color:#143d6b;">Agent Router Monitoring Console</h1>
+      <h1 class="text-2xl font-semibold ml-4" style="color:#143d6b;">Agent Router Monitoring Console</h1>
       <div class="flex items-center gap-3">
         <!-- Global styled Timezone dropdown (only one in the app) -->
         <div class="relative" id="tz-wrap">
@@ -31,7 +31,7 @@
             <!-- populated by JS -->
           </div>
         </div>
-  <!-- Agents button removed, now handled by tab navigation -->
+        <!-- Agents button removed, now handled by tab navigation -->
         <button id="submit-open" class="px-3 py-1 rounded bg-slate-200">Submit Test Job</button>
       </div>
     </header>
@@ -53,10 +53,12 @@
               <span id="tr-label-shared">Last 24 hours</span>
               <span class="text-xs">▼</span>
             </button>
-            <div id="tr-pop-shared" class="hidden absolute right-0 z-50 mt-1 w-[28rem] bg-white border rounded shadow p-3 space-y-3">
+            <div id="tr-pop-shared"
+              class="hidden absolute right-0 z-50 mt-1 w-[28rem] bg-white border rounded shadow p-3 space-y-3">
               <div class="text-sm">
                 <div class="font-medium mb-1">Time field</div>
-                <label class="mr-2"><input type="radio" name="tr-field-shared" value="updated_at" checked> Updated</label>
+                <label class="mr-2"><input type="radio" name="tr-field-shared" value="updated_at" checked>
+                  Updated</label>
                 <label><input type="radio" name="tr-field-shared" value="created_at"> Created</label>
               </div>
               <div class="text-sm">
@@ -95,27 +97,105 @@
             </div>
           </div>
         </div>
-  <div id="tab-content-jobs">
-        <div class="flex flex-col gap-2 mb-2">
-          <div class="flex items-center justify-between">
-            <h2 class="font-semibold">Jobs</h2>
-            <div class="flex items-center gap-3">
-              <input id="job-filter" class="border rounded px-2 py-1" placeholder="Filter: job/agent/status" />
+        <div id="tab-content-jobs">
+          <div class="flex flex-col gap-2 mb-2">
+            <div class="flex items-center justify-between">
+              <h2 class="font-semibold">Jobs</h2>
+              <div class="flex items-center gap-3">
+                <input id="job-filter" class="border rounded px-2 py-1" placeholder="Filter: job/agent/status" />
 
 
-              <label class="text-sm flex items-center gap-1">
-                <input id="autorefresh" type="checkbox" class="accent-blue-600" checked /> Auto
-                <button id="manual-refresh" class="ml-2 px-2 py-1 border rounded bg-slate-200" title="Refresh now">
-                  <span id="refresh-icon">🔄</span>
-                </button>
-              </label>
+                <label class="text-sm flex items-center gap-1">
+                  <input id="autorefresh" type="checkbox" class="accent-blue-600" checked /> Auto
+                  <button id="manual-refresh" class="ml-2 px-2 py-1 border rounded bg-slate-200" title="Refresh now">
+                    <span id="refresh-icon">🔄</span>
+                  </button>
+                </label>
+              </div>
+            </div>
+            <!-- Pagination -->
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-sm text-slate-600">Rows per page</span>
+                <select id="page-size" class="border rounded px-2 py-1">
+                  <option selected>15</option>
+                  <option>30</option>
+                  <option>50</option>
+                  <option>100</option>
+                  <option>200</option>
+                </select>
+              </div>
+              <div class="flex items-center gap-3 text-sm">
+                <span id="page-info" class="text-slate-600">–</span>
+                <div class="flex items-center gap-1">
+                  <button id="prev-page" class="border rounded px-2 py-1">←</button>
+                  <button id="next-page" class="border rounded px-2 py-1">→</button>
+                </div>
+              </div>
             </div>
           </div>
-          <!-- Pagination -->
-          <div class="flex items-center justify-between">
+          <div id="jobs-chips" class="flex flex-wrap gap-2 mb-2"></div>
+          <div id="jobs-scroll" class="overflow-auto" style="max-height: calc(15 * var(--row-h, 34px) + 112px)">
+            <table id="jobs-table" class="w-full text-sm">
+              <thead class="sticky top-0 bg-slate-100">
+                <tr>
+                  <th class="text-left p-2 cursor-pointer" data-sort="job_id">Job ID <span class="text-xs"
+                      id="sort-job_id"></span></th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="status">Status <span class="text-xs"
+                      id="sort-status"></span></th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="agent_id">Agent <span class="text-xs"
+                      id="sort-agent_id"></span></th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="rc">RC <span class="text-xs" id="sort-rc"></span>
+                  </th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="created_at">Created <span class="text-xs"
+                      id="sort-created_at"></span></th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="updated_at">Updated <span class="text-xs"
+                      id="sort-updated_at"></span></th>
+                  <th class="text-left p-2">Labels</th>
+                  <th class="text-left p-2"></th>
+                </tr>
+
+                <tr>
+                  <th class="p-2"><input id="f-job_id" class="border rounded px-2 py-1 w-full"
+                      placeholder="Filter job id" /></th>
+                  <th class="p-2">
+                    <select id="f-status" class="border rounded px-2 py-1 w-full">
+                      <option value=""></option>
+                      <option>QUEUED</option>
+                      <option>RUNNING</option>
+                      <option>SUCCEEDED</option>
+                      <option>FAILED</option>
+                    </select>
+                  </th>
+                  <th class="p-2"><input id="f-agent_id" class="border rounded px-2 py-1 w-full"
+                      placeholder="Filter agent" /></th>
+                  <th class="p-2"><input id="f-rc" class="border rounded px-2 py-1 w-full" placeholder="e.g. 0" /></th>
+                  <th class="p-2"><input id="f-created_at" class="border rounded px-2 py-1 w-full"
+                      placeholder="Filter date/time" /></th>
+                  <th class="p-2"><input id="f-updated_at" class="border rounded px-2 py-1 w-full"
+                      placeholder="Filter date/time" /></th>
+                  <th class="p-2"><input id="f-labels" class="border rounded px-2 py-1 w-full"
+                      placeholder='key or "k:v"' /></th>
+                  <th class="p-2"><button id="f-clear-all" class="text-xs border rounded px-2 py-1">Clear all</button>
+                  </th>
+                </tr>
+
+              </thead>
+              <tbody id="jobs-body"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="tab-content-agents" style="display:none">
+          <div class="flex justify-between items-center mb-2">
+            <h3 class="text-lg font-semibold">Agent Explorer</h3>
+            <span id="agent-count" class="text-sm text-slate-500"></span>
+          </div>
+          <div id="agents-banner" class="hidden mb-2 px-3 py-2 rounded text-sm"></div>
+          <!-- Pagination controls for Agents tab -->
+          <div class="flex items-center justify-between mb-2">
             <div class="flex items-center gap-2">
               <span class="text-sm text-slate-600">Rows per page</span>
-              <select id="page-size" class="border rounded px-2 py-1">
+              <select id="agents-page-size" class="border rounded px-2 py-1">
                 <option selected>15</option>
                 <option>30</option>
                 <option>50</option>
@@ -124,211 +204,142 @@
               </select>
             </div>
             <div class="flex items-center gap-3 text-sm">
-              <span id="page-info" class="text-slate-600">–</span>
+              <span id="agents-page-info" class="text-slate-600">–</span>
               <div class="flex items-center gap-1">
-                <button id="prev-page" class="border rounded px-2 py-1">←</button>
-                <button id="next-page" class="border rounded px-2 py-1">→</button>
+                <button id="agents-prev-page" class="border rounded px-2 py-1">←</button>
+                <button id="agents-next-page" class="border rounded px-2 py-1">→</button>
               </div>
             </div>
           </div>
+          <div class="overflow-auto" style="max-height: 70vh">
+            <table class="w-full text-sm" id="agents-table">
+              <thead class="sticky top-0 bg-slate-100">
+                <tr>
+                  <th class="text-left p-2 cursor-pointer" data-sort="agent_id">Agent <span class="text-xs"
+                      id="sort-agent_id-agents"></span></th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="url">URL <span class="text-xs"
+                      id="sort-url-agents"></span></th>
+                  <th class="text-left p-2">Labels</th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="status">Status <span class="text-xs"
+                      id="sort-status-agents"></span></th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="last_heartbeat">Last Heart Beat <span
+                      class="text-xs" id="sort-last_heartbeat-agents"></span></th>
+                  <th class="text-left p-2 cursor-pointer" id="agents-jobs-col-title" data-sort="jobs_in_range">Jobs (in
+                    range) <span class="text-xs" id="sort-jobs_in_range-agents"></span></th>
+                  <th class="text-left p-2"></th>
+                </tr>
+                <tr>
+                  <th class="p-2"><input id="f-agent_id-agents" class="border rounded px-2 py-1 w-full"
+                      placeholder="Filter agent id" /></th>
+                  <th class="p-2"><input id="f-url-agents" class="border rounded px-2 py-1 w-full"
+                      placeholder="Filter url" /></th>
+                  <th class="p-2"><input id="f-labels-agents" class="border rounded px-2 py-1 w-full"
+                      placeholder="key or 'k:v'" /></th>
+                  <th class="p-2">
+                    <select id="f-status-agents" class="border rounded px-2 py-1 w-full">
+                      <option value=""></option>
+                      <option>Registered</option>
+                      <option>Discovered</option>
+                      <option>Offline</option>
+                    </select>
+                  </th>
+                  <th class="p-2"><input id="f-last_heartbeat-agents" class="border rounded px-2 py-1 w-full"
+                      placeholder="Filter date/time" /></th>
+                  <th class="p-2"></th>
+                  <th class="p-2"><button id="f-clear-all-agents" class="text-xs border rounded px-2 py-1">Clear
+                      all</button></th>
+                </tr>
+              </thead>
+              <tbody id="agents-detail-body"></tbody>
+            </table>
+          </div>
         </div>
-        <div id="jobs-chips" class="flex flex-wrap gap-2 mb-2"></div>
-        <div id="jobs-scroll" class="overflow-auto" style="max-height: calc(15 * var(--row-h, 34px) + 112px)">
-          <table id="jobs-table" class="w-full text-sm">
-            <thead class="sticky top-0 bg-slate-100">
-              <tr>
-                <th class="text-left p-2 cursor-pointer" data-sort="job_id">Job ID <span class="text-xs"
-                    id="sort-job_id"></span></th>
-                <th class="text-left p-2 cursor-pointer" data-sort="status">Status <span class="text-xs"
-                    id="sort-status"></span></th>
-                <th class="text-left p-2 cursor-pointer" data-sort="agent_id">Agent <span class="text-xs"
-                    id="sort-agent_id"></span></th>
-                <th class="text-left p-2 cursor-pointer" data-sort="rc">RC <span class="text-xs" id="sort-rc"></span>
-                </th>
-                <th class="text-left p-2 cursor-pointer" data-sort="created_at">Created <span class="text-xs"
-                    id="sort-created_at"></span></th>
-                <th class="text-left p-2 cursor-pointer" data-sort="updated_at">Updated <span class="text-xs"
-                    id="sort-updated_at"></span></th>
-                <th class="text-left p-2">Labels</th>
-                <th class="text-left p-2"></th>
-              </tr>
-
-              <tr>
-                <th class="p-2"><input id="f-job_id" class="border rounded px-2 py-1 w-full"
-                    placeholder="Filter job id" /></th>
-                <th class="p-2">
-                  <select id="f-status" class="border rounded px-2 py-1 w-full">
-                    <option value=""></option>
-                    <option>QUEUED</option>
-                    <option>RUNNING</option>
-                    <option>SUCCEEDED</option>
-                    <option>FAILED</option>
-                  </select>
-                </th>
-                <th class="p-2"><input id="f-agent_id" class="border rounded px-2 py-1 w-full"
-                    placeholder="Filter agent" /></th>
-                <th class="p-2"><input id="f-rc" class="border rounded px-2 py-1 w-full" placeholder="e.g. 0" /></th>
-                <th class="p-2"><input id="f-created_at" class="border rounded px-2 py-1 w-full"
-                    placeholder="Filter date/time" /></th>
-                <th class="p-2"><input id="f-updated_at" class="border rounded px-2 py-1 w-full"
-                    placeholder="Filter date/time" /></th>
-                <th class="p-2"><input id="f-labels" class="border rounded px-2 py-1 w-full"
-                    placeholder='key or "k:v"' /></th>
-                <th class="p-2"><button id="f-clear-all" class="text-xs border rounded px-2 py-1">Clear all</button>
-                </th>
-              </tr>
-
-            </thead>
-            <tbody id="jobs-body"></tbody>
-          </table>
-        </div>
-        </div>
-  <div id="tab-content-agents" style="display:none">
-    <div class="flex justify-between items-center mb-2">
-      <h3 class="text-lg font-semibold">Agent Explorer</h3>
-      <span id="agent-count" class="text-sm text-slate-500"></span>
-    </div>
-    <div id="agents-banner" class="hidden mb-2 px-3 py-2 rounded text-sm"></div>
-    <!-- Pagination controls for Agents tab -->
-    <div class="flex items-center justify-between mb-2">
-      <div class="flex items-center gap-2">
-        <span class="text-sm text-slate-600">Rows per page</span>
-        <select id="agents-page-size" class="border rounded px-2 py-1">
-          <option selected>15</option>
-          <option>30</option>
-          <option>50</option>
-          <option>100</option>
-          <option>200</option>
-        </select>
-      </div>
-      <div class="flex items-center gap-3 text-sm">
-        <span id="agents-page-info" class="text-slate-600">–</span>
-        <div class="flex items-center gap-1">
-          <button id="agents-prev-page" class="border rounded px-2 py-1">←</button>
-          <button id="agents-next-page" class="border rounded px-2 py-1">→</button>
-        </div>
-      </div>
-    </div>
-    <div class="overflow-auto" style="max-height: 70vh">
-      <table class="w-full text-sm" id="agents-table">
-        <thead class="sticky top-0 bg-slate-100">
-          <tr>
-            <th class="text-left p-2 cursor-pointer" data-sort="agent_id">Agent <span class="text-xs" id="sort-agent_id-agents"></span></th>
-            <th class="text-left p-2 cursor-pointer" data-sort="url">URL <span class="text-xs" id="sort-url-agents"></span></th>
-            <th class="text-left p-2">Labels</th>
-            <th class="text-left p-2 cursor-pointer" data-sort="status">Status <span class="text-xs" id="sort-status-agents"></span></th>
-            <th class="text-left p-2 cursor-pointer" data-sort="last_heartbeat">Last Heart Beat <span class="text-xs" id="sort-last_heartbeat-agents"></span></th>
-            <th class="text-left p-2 cursor-pointer" id="agents-jobs-col-title" data-sort="jobs_in_range">Jobs (in range) <span class="text-xs" id="sort-jobs_in_range-agents"></span></th>
-            <th class="text-left p-2"></th>
-          </tr>
-          <tr>
-            <th class="p-2"><input id="f-agent_id-agents" class="border rounded px-2 py-1 w-full" placeholder="Filter agent id" /></th>
-            <th class="p-2"><input id="f-url-agents" class="border rounded px-2 py-1 w-full" placeholder="Filter url" /></th>
-            <th class="p-2"><input id="f-labels-agents" class="border rounded px-2 py-1 w-full" placeholder="key or 'k:v'" /></th>
-            <th class="p-2">
-              <select id="f-status-agents" class="border rounded px-2 py-1 w-full">
-                <option value=""></option>
-                <option>Registered</option>
-                <option>Discovered</option>
-                <option>Offline</option>
-              </select>
-            </th>
-            <th class="p-2"><input id="f-last_heartbeat-agents" class="border rounded px-2 py-1 w-full" placeholder="Filter date/time" /></th>
-            <th class="p-2"></th>
-            <th class="p-2"><button id="f-clear-all-agents" class="text-xs border rounded px-2 py-1">Clear all</button></th>
-          </tr>
-        </thead>
-        <tbody id="agents-detail-body"></tbody>
-      </table>
-    </div>
-  </div>
-  <div id="tab-content-analytics" style="display:none; min-height:400px;">
-    <div id="analytics-chart" class="analytics-chart"></div>
-    <div id="analytics-total-box-row" class="analytics-total-box-row flex flex-row items-start mt-2 w-full">
-      <div id="analytics-total-box" class="analytics-total-box">
-        <span class="analytics-total-label">Jobs Count</span>
-        <span id="analytics-total-number" class="analytics-total-number">0</span>
-      </div>
-      <div id="analytics-doughnut-box" class="analytics-doughnut-box">
-        <span class="analytics-doughnut-title">Test vs. Airflow</span>
-        <svg id="analytics-doughnut-chart" width="100%" height="100%" viewBox="0 0 120 120"></svg>
-        <span id="analytics-doughnut-label" class="analytics-doughnut-label">Test vs Real</span>
-      </div>
-      <div id="analytics-testjobstate-box" class="analytics-testjobstate-box">
-        <span class="analytics-testjobstate-title">Test Jobs</span>
-        <svg id="analytics-testjobstate-chart" width="100%" height="100%" viewBox="0 0 120 120"></svg>
-
-      </div>
-      <div id="analytics-airflowstate-box" class="analytics-airflowstate-box">
-        <span class="analytics-airflowstate-title">Airflow Jobs</span>
-        <svg id="analytics-airflowstate-chart" width="100%" height="100%" viewBox="0 0 120 120"></svg>
-      </div>
-      <div class="flex-1"></div>
-    </div>
-  </div>
-  </div>
-  </div>
-      </div>
-    </section>
-
-    <!-- Job Drawer -->
-    <dialog id="drawer" class="w-full max-w-3xl rounded-2xl shadow-lg">
-      <div class="p-4 space-y-3">
-        <div class="flex justify-between items-center">
-          <h3 id="drawer-title" class="text-lg font-semibold">Job</h3>
-          <button id="drawer-close" class="px-3 py-1 bg-slate-200 rounded flex items-center justify-center" title="Close">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-            </svg>
-          </button>
-        </div>
-        <div id="drawer-meta" class="text-sm"></div>
-        <div>
-          <div class="flex justify-between items-center">
-            <h4 class="font-semibold">Logs</h4>
-            <div class="flex items-center gap-2">
-              <button id="drawer-log-copy" class="log-copy-btn" title="Copy logs">
-                <span style="font-size: 1.3em;">📋</span>
-              </button>
-              <label class="text-xs flex items-center gap-1">
-                <input id="log-autorefresh" type="checkbox" class="accent-blue-600" checked /> Follow
-              </label>
+        <div id="tab-content-analytics" style="display:none; min-height:400px;">
+          <div id="analytics-chart" class="analytics-chart"></div>
+          <div class="flex flex-row items-stretch gap-6 mt-4 mb-4">
+            <div class="flex flex-col items-center justify-center py-6">
+              <div class="analytics-gauge-box mb-8" style="height: 140px;">
+                <span class="analytics-gauge-title">Total Jobs</span>
+                <svg id="analytics-total-gauge" width="180" height="120"></svg>
+              </div>
+              <div class="analytics-gauge-box" style="height: 140px;">
+                <span class="analytics-gauge-title">Success Rate</span>
+                <svg id="analytics-success-gauge" width="180" height="120"></svg>
+              </div>
+            </div>
+            <div id="analytics-heatmap-box" class="analytics-heatmap-box flex-1">
+              <span class="analytics-heatmap-title">Jobs Heatmap (Hour vs Day)</span>
+              <svg id="analytics-heatmap" height="220"></svg>
             </div>
           </div>
-          <pre id="drawer-log" class="bg-slate-50 p-3 rounded h-64 overflow-auto text-xs"></pre>
         </div>
       </div>
-    </dialog>
+  </div>
+  </div>
+  </section>
 
-
-    <!-- Submit Test Job dialog -->
-    <dialog id="submit-dialog" class="w-full max-w-xl rounded-2xl shadow-lg">
-      <div class="p-4 space-y-3">
+  <!-- Job Drawer -->
+  <dialog id="drawer" class="w-full max-w-3xl rounded-2xl shadow-lg">
+    <div class="p-4 space-y-3">
+      <div class="flex justify-between items-center">
+        <h3 id="drawer-title" class="text-lg font-semibold">Job</h3>
+        <button id="drawer-close" class="px-3 py-1 bg-slate-200 rounded flex items-center justify-center" title="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd"
+              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+              clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+      <div id="drawer-meta" class="text-sm"></div>
+      <div>
         <div class="flex justify-between items-center">
-          <h3 class="text-lg font-semibold">Submit Test Job</h3>
-          <button id="submit-close" class="px-3 py-1 bg-slate-200 rounded flex items-center justify-center" title="Close">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-            </svg>
-          </button>
-        </div>
-        <div class="space-y-2">
-          <div id="tj-agent-status-banner" class="hidden mb-2 px-3 py-2 rounded text-sm"></div>
-          <select id="tj-agent" class="border rounded px-2 py-1 w-full">
-            <option value="">(Any agent via labels)</option>
-          </select>
-          <input id="tj-command" class="border rounded px-2 py-1 w-full" value="echo HELLO && sleep 2 && echo DONE" />
-          <textarea id="tj-labels" class="border rounded px-2 py-1 w-full" rows="3"
-            placeholder='{} (or {"os":"linux"})'></textarea>
+          <h4 class="font-semibold">Logs</h4>
           <div class="flex items-center gap-2">
-            <button id="tj-send"
-              class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded">Submit</button>
-            <span class="text-xs text-slate-500">Submit runs on the selected agent (or via labels if left blank).</span>
+            <button id="drawer-log-copy" class="log-copy-btn" title="Copy logs">
+              <span style="font-size: 1.3em;">📋</span>
+            </button>
+            <label class="text-xs flex items-center gap-1">
+              <input id="log-autorefresh" type="checkbox" class="accent-blue-600" checked /> Follow
+            </label>
           </div>
-          <pre id="tj-out" class="p-2 rounded overflow-auto h-24" style="font-size:0.9rem;white-space:pre-wrap;word-break:break-word;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#3a4a3c;color:#e6ffe6;"></pre>
         </div>
+        <pre id="drawer-log" class="bg-slate-50 p-3 rounded h-64 overflow-auto text-xs"></pre>
       </div>
-    </dialog>
+    </div>
+  </dialog>
+
+
+  <!-- Submit Test Job dialog -->
+  <dialog id="submit-dialog" class="w-full max-w-xl rounded-2xl shadow-lg">
+    <div class="p-4 space-y-3">
+      <div class="flex justify-between items-center">
+        <h3 class="text-lg font-semibold">Submit Test Job</h3>
+        <button id="submit-close" class="px-3 py-1 bg-slate-200 rounded flex items-center justify-center" title="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd"
+              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+              clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+      <div class="space-y-2">
+        <div id="tj-agent-status-banner" class="hidden mb-2 px-3 py-2 rounded text-sm"></div>
+        <select id="tj-agent" class="border rounded px-2 py-1 w-full">
+          <option value="">(Any agent via labels)</option>
+        </select>
+        <input id="tj-command" class="border rounded px-2 py-1 w-full" value="echo HELLO && sleep 2 && echo DONE" />
+        <textarea id="tj-labels" class="border rounded px-2 py-1 w-full" rows="3"
+          placeholder='{} (or {"os":"linux"})'></textarea>
+        <div class="flex items-center gap-2">
+          <button id="tj-send" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded">Submit</button>
+          <span class="text-xs text-slate-500">Submit runs on the selected agent (or via labels if left blank).</span>
+        </div>
+        <pre id="tj-out" class="p-2 rounded overflow-auto h-24"
+          style="font-size:0.9rem;white-space:pre-wrap;word-break:break-word;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#3a4a3c;color:#e6ffe6;"></pre>
+      </div>
+    </div>
+  </dialog>
 
   <!-- Agents dialog removed, now in tab -->
 

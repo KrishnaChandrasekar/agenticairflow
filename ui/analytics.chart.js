@@ -1,3 +1,191 @@
+  function renderScatterPlot(jobs) {
+    const svg = document.getElementById("analytics-scatterplot");
+    if (!svg) return;
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    // Prepare data: duration (ms), time (x), agent (color)
+    const data = jobs
+      .filter(j => j.created_at && j.updated_at && j.agent_id)
+      .map(j => {
+        const start = window.toTs ? window.toTs(j.created_at) : Date.parse(j.created_at);
+        const end = window.toTs ? window.toTs(j.updated_at) : Date.parse(j.updated_at);
+        return {
+          duration: (end - start) / 1000, // seconds
+          time: end,
+          agent: j.agent_id || "?"
+        };
+      })
+      .filter(d => d.duration >= 0 && Number.isFinite(d.duration) && Number.isFinite(d.time));
+    if (!data.length) return;
+    const width = svg.clientWidth || 720, height = 320, margin = {top: 32, right: 32, bottom: 48, left: 64};
+    // X: time
+    const x = d3.scaleTime()
+      .domain(d3.extent(data, d => d.time))
+      .range([margin.left, width - margin.right]);
+    // Y: duration
+    const y = d3.scaleLinear()
+      .domain([0, d3.max(data, d => d.duration) || 1]).nice()
+      .range([height - margin.bottom, margin.top]);
+    // Color: agent
+    const agents = Array.from(new Set(data.map(d => d.agent)));
+    const color = d3.scaleOrdinal().domain(agents).range(d3.schemeCategory10);
+    // Draw axes
+    const xAxis = d3.axisBottom(x).ticks(6).tickFormat(d => {
+      try {
+        return new Intl.DateTimeFormat(undefined, {hour:'2-digit',minute:'2-digit',month:'short',day:'2-digit'}).format(new Date(d));
+      } catch { return new Date(d).toLocaleString(); }
+    });
+    const yAxis = d3.axisLeft(y).ticks(6);
+    // SVG axes
+    const gX = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    gX.setAttribute("transform", `translate(0,${height - margin.bottom})`);
+    svg.appendChild(gX);
+    d3.select(gX).call(xAxis);
+    const gY = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    gY.setAttribute("transform", `translate(${margin.left},0)`);
+    svg.appendChild(gY);
+    d3.select(gY).call(yAxis);
+    // Dots
+    data.forEach(d => {
+      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      circle.setAttribute("cx", x(d.time));
+      circle.setAttribute("cy", y(d.duration));
+      circle.setAttribute("r", 5);
+      circle.setAttribute("fill", color(d.agent));
+      circle.setAttribute("opacity", 0.8);
+      // Tooltip
+      circle.addEventListener("mousemove", evt => {
+        let tooltip = document.getElementById("analytics-scatter-tooltip");
+        if (!tooltip) {
+          tooltip = document.createElement("div");
+          tooltip.id = "analytics-scatter-tooltip";
+          tooltip.style.position = "fixed";
+          tooltip.style.pointerEvents = "none";
+          tooltip.style.background = "#fff";
+          tooltip.style.border = "1px solid #888";
+          tooltip.style.borderRadius = "6px";
+          tooltip.style.padding = "8px 12px";
+          tooltip.style.fontSize = "14px";
+          tooltip.style.boxShadow = "0 2px 8px rgba(0,0,0,0.12)";
+          tooltip.style.zIndex = 1000;
+          tooltip.style.display = "none";
+          document.body.appendChild(tooltip);
+        }
+        tooltip.innerHTML = `<b>Agent:</b> ${d.agent}<br><b>Duration:</b> ${d.duration.toFixed(1)}s<br><b>Time:</b> ${new Date(d.time).toLocaleString()}`;
+        tooltip.style.display = "block";
+        tooltip.style.left = (evt.clientX + 18) + "px";
+        tooltip.style.top = (evt.clientY - 10) + "px";
+      });
+      circle.addEventListener("mouseleave", () => {
+        const tooltip = document.getElementById("analytics-scatter-tooltip");
+        if (tooltip) tooltip.style.display = "none";
+      });
+      svg.appendChild(circle);
+    });
+    // Axis labels
+    const xLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    xLabel.setAttribute("x", width/2);
+    xLabel.setAttribute("y", height - 8);
+    xLabel.setAttribute("text-anchor", "middle");
+    xLabel.setAttribute("font-size", "1em");
+    xLabel.setAttribute("fill", "#334155");
+    xLabel.textContent = "End Time";
+    svg.appendChild(xLabel);
+    const yLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    yLabel.setAttribute("x", 18);
+    yLabel.setAttribute("y", height/2);
+    yLabel.setAttribute("text-anchor", "middle");
+    yLabel.setAttribute("font-size", "1em");
+    yLabel.setAttribute("fill", "#334155");
+    yLabel.setAttribute("transform", `rotate(-90 18,${height/2})`);
+    yLabel.textContent = "Duration (s)";
+    svg.appendChild(yLabel);
+  }
+  function renderJobsHeatmap(jobs) {
+    const svg = document.getElementById("analytics-heatmap");
+    if (!svg) return;
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    // Prepare data: count jobs by [day of week][hour]
+    const counts = Array.from({length: 7}, () => Array(24).fill(0));
+    jobs.forEach(job => {
+      const t = window.toTs ? window.toTs(job[window.TimeRange?.field || "updated_at"]) : Date.parse(job[window.TimeRange?.field || "updated_at"]);
+      if (!Number.isFinite(t)) return;
+      const date = new Date(t);
+      const day = date.getDay(); // 0=Sun
+      const hour = date.getHours();
+      counts[day][hour]++;
+    });
+  const svgWidth = svg.clientWidth || 720;
+  const width = svgWidth, height = 220, margin = {top: 28, right: 24, bottom: 24, left: 44};
+  const cellW = (width - margin.left - margin.right) / 24;
+  const cellH = (height - margin.top - margin.bottom) / 7;
+    // Find max for color scale
+    const maxCount = Math.max(1, ...counts.flat());
+    // Color scale
+    const color = d3.scaleLinear().domain([0, maxCount]).range(["#e5e7eb", "#2563eb"]);
+    // Draw cells
+    for (let day = 0; day < 7; ++day) {
+      for (let hour = 0; hour < 24; ++hour) {
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", margin.left + hour * cellW);
+        rect.setAttribute("y", margin.top + day * cellH);
+        rect.setAttribute("width", cellW - 1);
+        rect.setAttribute("height", cellH - 1);
+        rect.setAttribute("fill", color(counts[day][hour]));
+        rect.setAttribute("rx", 2);
+        // Tooltip on hover
+        rect.addEventListener("mousemove", evt => {
+          let tooltip = document.getElementById("analytics-heatmap-tooltip");
+          if (!tooltip) {
+            tooltip = document.createElement("div");
+            tooltip.id = "analytics-heatmap-tooltip";
+            tooltip.style.position = "fixed";
+            tooltip.style.pointerEvents = "none";
+            tooltip.style.background = "#fff";
+            tooltip.style.border = "1px solid #888";
+            tooltip.style.borderRadius = "6px";
+            tooltip.style.padding = "8px 12px";
+            tooltip.style.fontSize = "14px";
+            tooltip.style.boxShadow = "0 2px 8px rgba(0,0,0,0.12)";
+            tooltip.style.zIndex = 1000;
+            tooltip.style.display = "none";
+            document.body.appendChild(tooltip);
+          }
+          tooltip.innerHTML = `<b>${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][day]} ${hour}:00</b><br>Jobs: <b>${counts[day][hour]}</b>`;
+          tooltip.style.display = "block";
+          tooltip.style.left = (evt.clientX + 18) + "px";
+          tooltip.style.top = (evt.clientY - 10) + "px";
+        });
+        rect.addEventListener("mouseleave", () => {
+          const tooltip = document.getElementById("analytics-heatmap-tooltip");
+          if (tooltip) tooltip.style.display = "none";
+        });
+        svg.appendChild(rect);
+      }
+    }
+    // Draw axes
+    // Days
+    for (let day = 0; day < 7; ++day) {
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", margin.left - 8);
+      text.setAttribute("y", margin.top + day * cellH + cellH/2 + 5);
+      text.setAttribute("text-anchor", "end");
+      text.setAttribute("font-size", "12px");
+      text.setAttribute("fill", "#64748b");
+      text.textContent = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][day];
+      svg.appendChild(text);
+    }
+    // Hours
+    for (let hour = 0; hour < 24; hour += 2) {
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", margin.left + hour * cellW + cellW/2);
+      text.setAttribute("y", margin.top - 8);
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("font-size", "12px");
+      text.setAttribute("fill", "#64748b");
+      text.textContent = `${hour}:00`;
+      svg.appendChild(text);
+    }
+  }
 // D3.js stacked bar chart for Analytics tab
 // This file is loaded dynamically by app.js when Analytics tab is shown
 // It expects window.state.jobs to be available
@@ -426,10 +614,55 @@
   }
 
   // Expose to window
+
+  function renderTotalJobGauge(jobs) {
+  const svg = document.getElementById("analytics-total-gauge");
+  if (!svg) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const total = jobs.length;
+  const width = 180, height = 120;
+  // Center the number both vertically and horizontally
+  const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  text.setAttribute("x", width/2);
+  text.setAttribute("y", height/2);
+  text.setAttribute("dominant-baseline", "middle");
+  text.setAttribute("alignment-baseline", "middle");
+  text.setAttribute("text-anchor", "middle");
+  text.setAttribute("font-size", "3em");
+  text.setAttribute("font-weight", "700");
+  text.setAttribute("fill", "#222933");
+  text.textContent = total;
+  svg.appendChild(text);
+  }
+
+  function renderSuccessRateGauge(jobs) {
+  const svg = document.getElementById("analytics-success-gauge");
+  if (!svg) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const total = jobs.length;
+  const succeeded = jobs.filter(j => j.status === "SUCCEEDED").length;
+  const rate = total ? succeeded / total : 0;
+  const percent = Math.round(rate * 100);
+  const width = 180, height = 120;
+  // Only show the percent number, centered, in green
+  const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  text.setAttribute("x", width/2);
+  text.setAttribute("y", height/2);
+  text.setAttribute("dominant-baseline", "middle");
+  text.setAttribute("alignment-baseline", "middle");
+  text.setAttribute("text-anchor", "middle");
+  text.setAttribute("font-size", "2.8em");
+  text.setAttribute("font-weight", "700");
+  text.setAttribute("fill", "#22c55e");
+  text.textContent = percent + "%";
+  svg.appendChild(text);
+  }
+
   window.renderAnalyticsChart = function(jobs) {
     renderStackedBarChart(jobs || [], {binMinutes: 60});
-    renderJobTypeDoughnut(jobs || []);
-    renderTestJobStatePie(jobs || []);
-    renderAirflowJobStatePie(jobs || []);
+    renderTotalJobGauge(jobs || []);
+    renderSuccessRateGauge(jobs || []);
+    renderJobsHeatmap(jobs || []);
+    renderScatterPlot(jobs || []);
   };
 })();
