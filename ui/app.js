@@ -467,11 +467,13 @@ async function renderAgentsDetailTab(){
   if (colTitle) colTitle.textContent = `Jobs (${fmtRangeLabel()})`;
   const counts = {};
   await Promise.all(state.agents.map(async a => {
-    try{
-      const j = await fetchJSON(`${BASE}/jobs?limit=1000&agent_id=${encodeURIComponent(a.agent_id)}`);
-      const arr = Array.isArray(j) ? j : (j.jobs||[]);
-      counts[a.agent_id] = arr.filter(agentJobInTimeRange).length;
-    } catch { counts[a.agent_id] = 0; }
+      try {
+        const j = await fetchJSON(`${BASE}/jobs?limit=1000&agent_id=${encodeURIComponent(a.agent_id)}`);
+        const arr = Array.isArray(j) ? j : (j.jobs || []);
+        counts[a.agent_id] = arr.filter(agentJobInTimeRange).length;
+      } catch {
+        counts[a.agent_id] = 0;
+      }
   }));
   const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
   // Apply pagination to agents list
@@ -489,16 +491,33 @@ async function renderAgentsDetailTab(){
     // Add Deregister button only for Registered agents
     const rowId = `agent-row-${idx}`;
     const deregBtn = (status === "Registered") ? `<button class=\"px-2 py-1 text-xs bg-red-200 rounded agent-dereg-btn\" data-rowid=\"${rowId}\" onclick=\"deregisterAgent('${a.agent_id}')\">Deregister</button>` : "";
-  // Add a span with a unique id for dynamic update, monospace and min-width for stable layout
-  return `<tr id=\"${rowId}\" class=\"border-b border-slate-200\">
-    <td class=\"p-2 font-mono\">${a.agent_id}</td>
-    <td class=\"p-2 font-mono\">${a.url}</td>
-    <td class=\"p-2\">${labels||"-"}</td>
-    <td class=\"p-2\">${status}</td>
-    <td class=\"p-2 text-slate-500\"><span id=\"agent-hb-${a.agent_id}\">${fmtDate(a.last_heartbeat, TZ)} · ${fmtAgo(a.last_heartbeat)}</span></td>
-    <td class=\"p-2\">${counts[a.agent_id] ?? 0}</td>
-    <td class="p-2">${deregBtn}</td>
-  </tr>`;
+            // Add large Unicode Play button for all agents with tooltip, no background or border
+            // Play button: green and clickable if Registered, else greyed out and unclickable
+            let playColor = '#22c55e';
+            let playCursor = 'pointer';
+            let playDisabled = false;
+            let playTooltip = 'Submit a Test Job';
+            if (status !== 'Registered') {
+              playColor = '#cbd5e1'; // Tailwind slate-300
+              playCursor = 'not-allowed';
+              playDisabled = true;
+              playTooltip = 'Test Job can only be submitted for Registered agents';
+            }
+            const testJobBtn = `
+              <span class=\"relative group\" style=\"display:inline-block;margin-right:0.7em;\">
+                <button class=\"agent-testjob-btn\" data-agentid=\"${a.agent_id}\" ${playDisabled ? 'tabindex=\"-1\" disabled' : ''} onclick=\"${!playDisabled ? `openTestJobDialog('${a.agent_id}')` : ''}\" style=\"background:none;border:none;padding:0;vertical-align:middle;font-size:2em;color:${playColor};line-height:1;cursor:${playCursor};\">&#x25B6;</button>
+                <span class=\"invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1 rounded bg-slate-800 text-white text-xs whitespace-nowrap z-10\" style=\"pointer-events:none;\">${playTooltip}</span>
+              </span>`;
+      // Add a span with a unique id for dynamic update, monospace and min-width for stable layout
+      return `<tr id=\"${rowId}\" class=\"border-b border-slate-200\">
+        <td class=\"p-2 font-mono\">${a.agent_id}</td>
+        <td class=\"p-2 font-mono\">${a.url}</td>
+        <td class=\"p-2\">${labels || "-"}</td>
+        <td class=\"p-2\">${status}</td>
+        <td class=\"p-2 text-slate-500\"><span id=\"agent-hb-${a.agent_id}\">${fmtDate(a.last_heartbeat, TZ)} · ${fmtAgo(a.last_heartbeat)}</span></td>
+        <td class=\"p-2\">${counts[a.agent_id] ?? 0}</td>
+        <td class=\"p-2\">${testJobBtn} ${deregBtn}</td>
+      </tr>`;
   }).join("");
 
   // Set up dynamic update for Heartbeat column (only for visible agents)
@@ -567,6 +586,19 @@ async function renderAgentsDetailTab(){
     };
   };
 }
+  // Attach openTestJobDialog to window
+  window.openTestJobDialog = function(agent_id) {
+    const agentSel = document.getElementById("tj-agent");
+    if (agentSel) {
+      agentSel.value = agent_id;
+      // Trigger change event to update button state/banner
+      const event = new Event('change', { bubbles: true });
+      agentSel.dispatchEvent(event);
+    }
+    updateSubmitButtonState && updateSubmitButtonState();
+    const dialog = document.getElementById("submit-dialog");
+    if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
+  };
 
 
 // Shared Time Range UI logic for both tabs
@@ -686,11 +718,18 @@ async function submitTestJob(){
   delete routingLabels["job-type"];
   const route = agent ? { agent_id: agent } : { labels: routingLabels };
   const payload = { command: cmd, labels };
-  const out=$("tj-out"); if(out) out.textContent = "submitting...";
-  try{
-    const r = await fetch(`${BASE}/submit`, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ job: payload, route }) });
+  const out = $("tj-out"); if (out) out.textContent = "submitting...";
+  const banner = document.getElementById("tj-agent-status-banner");
+  // Only clear previous agent status banner, not for test job submit message
+  if (banner) {
+    banner.classList.add("hidden");
+    banner.textContent = "";
+    banner.className = "hidden mb-2 px-3 py-2 rounded text-sm";
+  }
+  try {
+    const r = await fetch(`${BASE}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job: payload, route }) });
     const text = await r.text();
-    if(out) out.textContent = text;
+    if (out) out.textContent = text;
     refreshAll();
     // Try to extract job_id from response (robust)
     let jobId = "";
@@ -710,6 +749,7 @@ async function submitTestJob(){
         testJobIds.push(jobId);
         localStorage.setItem("testJobIds", JSON.stringify(testJobIds));
       }
+  // (Removed) No test job submitted message display
       let pollCount = 0;
       let lastStatus = "RUNNING";
       const pollStatus = async () => {
@@ -719,7 +759,7 @@ async function submitTestJob(){
           const statusData = await statusResp.json();
           // Update job in state.jobs
           let updated = false;
-          state.jobs = (state.jobs||[]).map(j => {
+          state.jobs = (state.jobs || []).map(j => {
             if (String(j.job_id) === String(jobId)) {
               if (j.status !== statusData.status) updated = true;
               lastStatus = statusData.status;
@@ -743,7 +783,9 @@ async function submitTestJob(){
       };
       pollStatus();
     }
-  }catch(e){ if(out) out.textContent = "error: "+e.message; }
+  } catch (e) {
+    if (out) out.textContent = "error: " + e.message;
+  }
 }
 $("tj-send")?.addEventListener("click", submitTestJob);
 

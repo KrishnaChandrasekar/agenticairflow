@@ -18,7 +18,7 @@
   <div class="max-w-screen-2xl mx-auto p-4 space-y-4">
 
     <header class="flex items-center justify-between">
-      <h1 class="text-2xl font-semibold">Router Monitoring Console</h1>
+  <h1 class="text-2xl font-semibold ml-4" style="color:#143d6b;">Agent Router Monitoring Console</h1>
       <div class="flex items-center gap-3">
         <!-- Global styled Timezone dropdown (only one in the app) -->
         <div class="relative" id="tz-wrap">
@@ -286,10 +286,10 @@
           </button>
         </div>
         <div class="space-y-2">
+          <div id="tj-agent-status-banner" class="hidden mb-2 px-3 py-2 rounded text-sm"></div>
           <select id="tj-agent" class="border rounded px-2 py-1 w-full">
             <option value="">(Any agent via labels)</option>
           </select>
-          <div id="tj-agent-status-banner" class="hidden mb-2 px-3 py-2 rounded text-sm"></div>
           <input id="tj-command" class="border rounded px-2 py-1 w-full" value="echo HELLO && sleep 2 && echo DONE" />
           <textarea id="tj-labels" class="border rounded px-2 py-1 w-full" rows="3"
             placeholder='{} (or {"os":"linux"})'></textarea>
@@ -298,7 +298,7 @@
               class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded">Submit</button>
             <span class="text-xs text-slate-500">Submit runs on the selected agent (or via labels if left blank).</span>
           </div>
-          <pre id="tj-out" class="text-xs bg-slate-50 p-2 rounded overflow-auto h-24"></pre>
+          <pre id="tj-out" class="p-2 rounded overflow-auto h-24" style="font-size:0.9rem;white-space:pre-wrap;word-break:break-word;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#3a4a3c;color:#e6ffe6;"></pre>
         </div>
       </div>
     </dialog>
