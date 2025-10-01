@@ -45,6 +45,7 @@
           <div>
             <button id="tab-jobs" class="tab-btn active">Jobs</button>
             <button id="tab-agents" class="tab-btn">Agents</button>
+            <button id="tab-analytics" class="tab-btn">Analytics</button>
           </div>
           <!-- Shared Time Range Filter (Kibana style) -->
           <div class="relative" id="tr-wrap-shared">
@@ -94,7 +95,7 @@
             </div>
           </div>
         </div>
-        <div id="tab-content-jobs">
+  <div id="tab-content-jobs">
         <div class="flex flex-col gap-2 mb-2">
           <div class="flex items-center justify-between">
             <h2 class="font-semibold">Jobs</h2>
@@ -182,65 +183,73 @@
           </table>
         </div>
         </div>
-        <div id="tab-content-agents" style="display:none">
-          <div class="flex justify-between items-center mb-2">
-            <h3 class="text-lg font-semibold">Agent Explorer</h3>
-            <span id="agent-count" class="text-sm text-slate-500"></span>
-          </div>
-          <div id="agents-banner" class="hidden mb-2 px-3 py-2 rounded text-sm"></div>
-          <!-- Pagination controls for Agents tab -->
-          <div class="flex items-center justify-between mb-2">
-            <div class="flex items-center gap-2">
-              <span class="text-sm text-slate-600">Rows per page</span>
-              <select id="agents-page-size" class="border rounded px-2 py-1">
-                <option selected>15</option>
-                <option>30</option>
-                <option>50</option>
-                <option>100</option>
-                <option>200</option>
-              </select>
-            </div>
-            <div class="flex items-center gap-3 text-sm">
-              <span id="agents-page-info" class="text-slate-600">–</span>
-              <div class="flex items-center gap-1">
-                <button id="agents-prev-page" class="border rounded px-2 py-1">←</button>
-                <button id="agents-next-page" class="border rounded px-2 py-1">→</button>
-              </div>
-            </div>
-          </div>
-          <div class="overflow-auto" style="max-height: 70vh">
-            <table class="w-full text-sm" id="agents-table">
-              <thead class="sticky top-0 bg-slate-100">
-                <tr>
-                  <th class="text-left p-2 cursor-pointer" data-sort="agent_id">Agent <span class="text-xs" id="sort-agent_id-agents"></span></th>
-                  <th class="text-left p-2 cursor-pointer" data-sort="url">URL <span class="text-xs" id="sort-url-agents"></span></th>
-                  <th class="text-left p-2">Labels</th>
-                  <th class="text-left p-2 cursor-pointer" data-sort="status">Status <span class="text-xs" id="sort-status-agents"></span></th>
-                  <th class="text-left p-2 cursor-pointer" data-sort="last_heartbeat">Last Heart Beat <span class="text-xs" id="sort-last_heartbeat-agents"></span></th>
-                  <th class="text-left p-2 cursor-pointer" id="agents-jobs-col-title" data-sort="jobs_in_range">Jobs (in range) <span class="text-xs" id="sort-jobs_in_range-agents"></span></th>
-                  <th class="text-left p-2"></th>
-                </tr>
-                <tr>
-                  <th class="p-2"><input id="f-agent_id-agents" class="border rounded px-2 py-1 w-full" placeholder="Filter agent id" /></th>
-                  <th class="p-2"><input id="f-url-agents" class="border rounded px-2 py-1 w-full" placeholder="Filter url" /></th>
-                  <th class="p-2"><input id="f-labels-agents" class="border rounded px-2 py-1 w-full" placeholder="key or 'k:v'" /></th>
-                  <th class="p-2">
-                    <select id="f-status-agents" class="border rounded px-2 py-1 w-full">
-                      <option value=""></option>
-                      <option>Registered</option>
-                      <option>Discovered</option>
-                      <option>Offline</option>
-                    </select>
-                  </th>
-                  <th class="p-2"><input id="f-last_heartbeat-agents" class="border rounded px-2 py-1 w-full" placeholder="Filter date/time" /></th>
-                  <th class="p-2"></th>
-                  <th class="p-2"><button id="f-clear-all-agents" class="text-xs border rounded px-2 py-1">Clear all</button></th>
-                </tr>
-              </thead>
-              <tbody id="agents-detail-body"></tbody>
-            </table>
-          </div>
+  <div id="tab-content-agents" style="display:none">
+    <div class="flex justify-between items-center mb-2">
+      <h3 class="text-lg font-semibold">Agent Explorer</h3>
+      <span id="agent-count" class="text-sm text-slate-500"></span>
+    </div>
+    <div id="agents-banner" class="hidden mb-2 px-3 py-2 rounded text-sm"></div>
+    <!-- Pagination controls for Agents tab -->
+    <div class="flex items-center justify-between mb-2">
+      <div class="flex items-center gap-2">
+        <span class="text-sm text-slate-600">Rows per page</span>
+        <select id="agents-page-size" class="border rounded px-2 py-1">
+          <option selected>15</option>
+          <option>30</option>
+          <option>50</option>
+          <option>100</option>
+          <option>200</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-3 text-sm">
+        <span id="agents-page-info" class="text-slate-600">–</span>
+        <div class="flex items-center gap-1">
+          <button id="agents-prev-page" class="border rounded px-2 py-1">←</button>
+          <button id="agents-next-page" class="border rounded px-2 py-1">→</button>
         </div>
+      </div>
+    </div>
+    <div class="overflow-auto" style="max-height: 70vh">
+      <table class="w-full text-sm" id="agents-table">
+        <thead class="sticky top-0 bg-slate-100">
+          <tr>
+            <th class="text-left p-2 cursor-pointer" data-sort="agent_id">Agent <span class="text-xs" id="sort-agent_id-agents"></span></th>
+            <th class="text-left p-2 cursor-pointer" data-sort="url">URL <span class="text-xs" id="sort-url-agents"></span></th>
+            <th class="text-left p-2">Labels</th>
+            <th class="text-left p-2 cursor-pointer" data-sort="status">Status <span class="text-xs" id="sort-status-agents"></span></th>
+            <th class="text-left p-2 cursor-pointer" data-sort="last_heartbeat">Last Heart Beat <span class="text-xs" id="sort-last_heartbeat-agents"></span></th>
+            <th class="text-left p-2 cursor-pointer" id="agents-jobs-col-title" data-sort="jobs_in_range">Jobs (in range) <span class="text-xs" id="sort-jobs_in_range-agents"></span></th>
+            <th class="text-left p-2"></th>
+          </tr>
+          <tr>
+            <th class="p-2"><input id="f-agent_id-agents" class="border rounded px-2 py-1 w-full" placeholder="Filter agent id" /></th>
+            <th class="p-2"><input id="f-url-agents" class="border rounded px-2 py-1 w-full" placeholder="Filter url" /></th>
+            <th class="p-2"><input id="f-labels-agents" class="border rounded px-2 py-1 w-full" placeholder="key or 'k:v'" /></th>
+            <th class="p-2">
+              <select id="f-status-agents" class="border rounded px-2 py-1 w-full">
+                <option value=""></option>
+                <option>Registered</option>
+                <option>Discovered</option>
+                <option>Offline</option>
+              </select>
+            </th>
+            <th class="p-2"><input id="f-last_heartbeat-agents" class="border rounded px-2 py-1 w-full" placeholder="Filter date/time" /></th>
+            <th class="p-2"></th>
+            <th class="p-2"><button id="f-clear-all-agents" class="text-xs border rounded px-2 py-1">Clear all</button></th>
+          </tr>
+        </thead>
+        <tbody id="agents-detail-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <div id="tab-content-analytics" style="display:none; min-height:400px;">
+  <!-- Removed Analytics heading above chart -->
+  <div id="analytics-chart" style="width:100%;height:340px;background:#f8fafc;min-height:100px;display:flex;align-items:center;justify-content:center;">
+      <!-- Chart will render here. If you see this text, JS is not running or the container is not being cleared. -->
+      <span style="color:#888">(Chart container is visible. If you see this, JS is not running or chart is not being rendered.)</span>
+    </div>
+  </div>
+  </div>
       </div>
     </section>
 
@@ -307,9 +316,11 @@
 
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
   <script src="config.js" defer></script>
   <script src="updateSubmitButtonState.global.js" defer></script>
   <script src="app.js" defer></script>
+  <script src="analytics.chart.js" defer></script>
 </body>
 
 </html>
