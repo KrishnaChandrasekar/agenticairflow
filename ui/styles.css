@@ -1,3 +1,78 @@
+/* Analytics Tab Styles */
+.analytics-chart {
+    width: 100%;
+    height: 340px;
+    background: #f8fafc;
+    min-height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1.5px solid #e5e7eb;
+}
+.analytics-total-box-row {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    margin-top: 8px;
+    width: 100%;
+}
+.analytics-total-box {
+    width: 14.28%;
+    aspect-ratio: 1/1;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 12px 0 0 12px;
+    margin-right: 24px;
+    position: relative;
+}
+.analytics-total-label {
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #64748b;
+    position: absolute;
+    top: 12px;
+    left: 12px;
+}
+.analytics-total-number {
+    font-size: 4.3em;
+    font-weight: 700;
+    color: #334155;
+    align-self: center;
+    justify-self: center;
+    margin: auto;
+    width: 100%;
+    text-align: center;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -30%);
+}
+.analytics-doughnut-box {
+    width: 28.57%;
+    aspect-ratio: 2/1;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 3px;
+    position: relative;
+}
+.analytics-doughnut-label {
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.1em;
+    font-weight: 500;
+    color: #64748b;
+    text-align: center;
+    width: 100%;
+}
 /* Highlight agent row on Deregister button hover */
 .agent-row-highlight {
     background-color: #fef3c7 !important; /* Tailwind amber-100 */

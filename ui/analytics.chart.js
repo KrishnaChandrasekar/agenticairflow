@@ -39,14 +39,98 @@
   }
 
   function renderStackedBarChart(jobs, opts={}) {
+    // --- Doughnut chart for job type distribution ---
+    const doughnutSvg = document.getElementById("analytics-doughnut-chart");
+    if (doughnutSvg) {
+      // Clear previous chart
+      while (doughnutSvg.firstChild) doughnutSvg.removeChild(doughnutSvg.firstChild);
+      // Remove any previous legend or label
+      const legend = document.getElementById("analytics-doughnut-legend");
+      if (legend && legend.parentElement) legend.parentElement.removeChild(legend);
+      const label = document.getElementById("analytics-doughnut-label");
+      if (label && label.parentElement) label.parentElement.removeChild(label);
+
+      // Count jobs by type
+      let testCount = 0, airflowCount = 0;
+      jobs.forEach(job => {
+        const type = parseJobType(job);
+        if (type === "Test Job") testCount++;
+        else airflowCount++;
+      });
+      const data = [testCount, airflowCount];
+      const colors = ["#669636ff", "#A1D76A"];
+      const labels = ["Test Job", "Airflow Job"];
+      const width = 120, height = 120, radius = 54, innerRadius = 32;
+      const pie = d3.pie().sort(null);
+      const arc = d3.arc().innerRadius(innerRadius).outerRadius(radius);
+      const arcs = pie(data);
+      // Center group for arcs
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      g.setAttribute("transform", `translate(${width/2},${height/2})`);
+
+      // Tooltip div (HTML, not SVG)
+      let tooltip = document.getElementById("analytics-doughnut-tooltip");
+      if (!tooltip) {
+        tooltip = document.createElement("div");
+        tooltip.id = "analytics-doughnut-tooltip";
+        tooltip.style.position = "fixed";
+        tooltip.style.pointerEvents = "none";
+        tooltip.style.background = "#fff";
+        tooltip.style.border = "1px solid #888";
+        tooltip.style.borderRadius = "6px";
+        tooltip.style.padding = "8px 12px";
+        tooltip.style.fontSize = "14px";
+        tooltip.style.boxShadow = "0 2px 8px rgba(0,0,0,0.12)";
+        tooltip.style.zIndex = 1000;
+        tooltip.style.display = "none";
+        document.body.appendChild(tooltip);
+      }
+
+      arcs.forEach((d, i) => {
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        // Animate the arc drawing
+        const arcTween = (t) => arc({startAngle: d.startAngle, endAngle: d.startAngle + (d.endAngle-d.startAngle)*t});
+        path.setAttribute("fill", colors[i]);
+        path.setAttribute("stroke", "#fff");
+        path.setAttribute("stroke-width", "2");
+        // Animation
+        let animFrame, start;
+        function animateArc(ts) {
+          if (!start) start = ts;
+          const progress = Math.min(1, (ts-start)/500); // 500ms
+          path.setAttribute("d", arcTween(progress));
+          if (progress < 1) animFrame = requestAnimationFrame(animateArc);
+        }
+        requestAnimationFrame(animateArc);
+
+        // Interactivity: tooltip
+        path.addEventListener("mousemove", (evt) => {
+          tooltip.innerHTML = `<b>${labels[i]}</b><br>Count: <b>${data[i]}</b><br>Percent: <b>${data[i] && (data[0]+data[1]) ? ((data[i]/(data[0]+data[1])*100).toFixed(1)) : 0}%</b>`;
+          tooltip.style.display = "block";
+          tooltip.style.left = (evt.clientX + 18) + "px";
+          tooltip.style.top = (evt.clientY - 10) + "px";
+        });
+        path.addEventListener("mouseleave", () => {
+          tooltip.style.display = "none";
+        });
+        g.appendChild(path);
+      });
+      doughnutSvg.appendChild(g);
+    }
     const container = document.getElementById("analytics-chart");
     if (!container) return;
-  container.innerHTML = "";
-  // Shrink chart width to leave space for legend
-  const legendWidth = 160;
-  const width = Math.max((container.offsetWidth || 900) - legendWidth, 400);
-  const height = container.offsetHeight || 420;
-  const margin = {top: 30, right: 30, bottom: 80, left: 60};
+    container.innerHTML = "";
+    // Shrink chart width to leave space for legend
+    const legendWidth = 160;
+    const width = Math.max((container.offsetWidth || 900) - legendWidth, 400);
+    const height = container.offsetHeight || 420;
+    const margin = {top: 30, right: 30, bottom: 80, left: 60};
+
+    // Update total jobs box below chart
+    const totalBox = document.getElementById("analytics-total-number");
+    if (totalBox) {
+      totalBox.textContent = jobs.length;
+    }
     // Bin jobs by time
     const binMinutes = opts.binMinutes || 60;
     const data = groupJobsByTime(jobs, binMinutes);
@@ -73,7 +157,7 @@
     // Use Tailwind theme colors: blue-600 for Test Job, green-600 for Airflow Job
     const color = d3.scaleOrdinal()
       .domain(keys)
-      .range(["#356de6ff", "#16a34a"]); // blue-600, green-600
+      .range(["#669636ff", "#A1D76A"]); 
     // Stack data
     const stacked = d3.stack().keys(keys)(data);
     // Use selected TZ for all date/times
@@ -146,8 +230,8 @@
         tooltip.html(
           `<div><b>${timeStr}</b></div>`+
           `<div>Total: <b>${total}</b></div>`+
-          `<div style='color:#3962a9ff'>Test Job: ${d["Test Job"] || 0}</div>`+
-          `<div style='color:#1d7c83ff'>Airflow Job: ${d["Airflow Job"] || 0}</div>`
+          `<div style='color:${color("Test Job")};'>Test Job: ${d["Test Job"] || 0}</div>`+
+          `<div style='color:${color("Airflow Job")};'>Airflow Job: ${d["Airflow Job"] || 0}</div>`
         )
         .style("display", "block")
         .style("left", (event.offsetX + 30) + "px")
