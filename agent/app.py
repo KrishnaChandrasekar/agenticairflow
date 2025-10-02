@@ -1,6 +1,5 @@
-# agent/app.py
-from __future__ import annotations
 
+from __future__ import annotations
 import json
 import os
 import shlex
@@ -13,6 +12,52 @@ from typing import Optional
 import psutil
 import requests
 from flask import Flask, jsonify, request, send_file
+
+# =========================
+# Reconciliation Logic
+# =========================
+def _reconcile_and_report():
+    """
+    On agent startup, scan all job directories, check status, and report to router.
+    """
+    try:
+        jobs = []
+        if not os.path.isdir(AGENT_HOME):
+            return
+        for job_id in os.listdir(AGENT_HOME):
+            home = os.path.join(AGENT_HOME, job_id)
+            pidp = os.path.join(home, "pid")
+            rcp = os.path.join(home, "rc")
+            status = "UNKNOWN"
+            pid = None
+            rc = None
+            if os.path.exists(pidp):
+                try:
+                    pid = int(open(pidp).read().strip())
+                except Exception:
+                    pid = None
+            if pid and _alive(pid):
+                status = "RUNNING"
+            elif os.path.exists(rcp):
+                try:
+                    rc = int(open(rcp).read().strip())
+                except Exception:
+                    rc = 1
+                status = "SUCCEEDED" if rc == 0 else "FAILED"
+            jobs.append({"job_id": job_id, "status": status, "pid": pid, "rc": rc})
+
+        # Report to router
+        if jobs:
+            url = f"{ROUTER_URL.rstrip('/')}/agents/reconcile"
+            headers = {"X-Agent-Token": AGENT_TOKEN, "Content-Type": "application/json"}
+            payload = {"agent_id": AGENT_ID, "jobs": jobs}
+            try:
+                resp = requests.post(url, json=payload, headers=headers, timeout=10)
+                print(f"[agent] Reconciliation report sent: {resp.status_code}", flush=True)
+            except Exception as e:
+                print(f"[agent] Reconciliation report failed: {e}", flush=True)
+    except Exception as e:
+        print(f"[agent] Reconciliation logic error: {e}", flush=True)
 
 # =========================
 # Configuration (env vars)
@@ -145,8 +190,10 @@ def _auto_register_once():
     except Exception as e:
         print("auto-register failed:", e, flush=True)
 
+
 # on startup
 _send_hello()
+_reconcile_and_report()
 if AGENT_AUTO_REGISTER:
     _auto_register_once()
 import threading as _t
@@ -205,21 +252,12 @@ def run():
     # Build environment for the child process
     env = {**os.environ, **{k: str(v) for k, v in extra_env.items()}}
 
-    # Build launcher:
-    #   - one backgrounded subshell:
-    #       cd <cwd> && ( <cmd> ); rc=$?; echo $rc > <rcp>
-    #     redirection:
-    #       stdout/stderr -> run.log
-    #     capture pid:
-    #       & echo $! > <pidp>
-    redir = f">{shlex.quote(logp)} 2>&1"
-    core = (
-        f"cd {shlex.quote(cwd)} || exit 255; "
-        f"( {cmd} ); rc=$?; echo $rc > {shlex.quote(rcp)}"
-    )
-    background = f"( {core} ) {redir} & echo $! > {shlex.quote(pidp)}"
 
-    launch = f"{SHELL} -lc {shlex.quote(background)}"
+
+    # Build robust, POSIX-compliant detachment command (Go agent style)
+    safe_cmd = cmd.replace("'", "'\\''")
+    core = f"( cd {shlex.quote(home)} || exit 255; sh -c '{safe_cmd}'; echo $? > {shlex.quote(rcp)} )"
+    launch = f"setsid nohup sh -c \"{core}\" >> {shlex.quote(logp)} 2>&1 & echo $! > {shlex.quote(pidp)}"
     if run_as:
         launch = f"sudo -u {shlex.quote(run_as)} {launch}"
 
@@ -227,7 +265,7 @@ def run():
 
     # Spawn
     try:
-        subprocess.Popen([SHELL, "-lc", launch], env=env)
+        subprocess.Popen(["sh", "-c", launch], env=env)
     except Exception as e:
         _writeln(logp, f"[agent] spawn exception: {e}\n")
         _writeln(logp, f"[agent] status=FAILED\n")

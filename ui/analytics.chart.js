@@ -1,4 +1,36 @@
+// --- Change detection helpers ---
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== typeof b) return false;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!deepEqual(a[i], b[i])) return false;
+    return true;
+  }
+  if (typeof a === 'object' && typeof b === 'object') {
+    const ka = Object.keys(a || {}), kb = Object.keys(b || {});
+    if (ka.length !== kb.length) return false;
+    for (const k of ka) if (!deepEqual(a[k], b[k])) return false;
+    return true;
+  }
+  return false;
+}
+
+// --- Chart renderers with animation only on data change ---
+let prevDualGauge = null;
+let prevJobsHeatmap = null;
+let prevAirflowDonut = null;
+let prevTestDonut = null;
+let prevJobTypeDonut = null;
   function renderDualGauge(jobs) {
+  const dualGauge_total = jobs.length;
+  const dualGauge_succeeded = jobs.filter(j => j.status === "SUCCEEDED").length;
+  const dualGauge_rate = dualGauge_total ? dualGauge_succeeded / dualGauge_total : 0;
+  const dualGauge_percent = Math.round(dualGauge_rate * 100);
+  const curData = {total: dualGauge_total, succeeded: dualGauge_succeeded, percent: dualGauge_percent};
+  const shouldAnimate = !deepEqual(curData, prevDualGauge);
+  prevDualGauge = JSON.parse(JSON.stringify(curData));
   const svg = document.getElementById("analytics-dual-gauge");
   if (!svg) return;
   while (svg.firstChild) svg.removeChild(svg.firstChild);
@@ -28,42 +60,46 @@
   arcFg.setAttribute("fill", "none");
   arcFg.setAttribute("stroke-linecap", "round");
   svg.appendChild(arcFg);
+  // Prepare text elements before animation logic
+  const textTotal = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  textTotal.setAttribute("x", cx);
+  textTotal.setAttribute("y", cy - 8);
+  textTotal.setAttribute("text-anchor", "middle");
+  textTotal.setAttribute("font-size", "2.9em");
+  textTotal.setAttribute("font-weight", "700");
+  textTotal.setAttribute("fill", "#222933");
+  textTotal.textContent = total;
+  svg.appendChild(textTotal);
+  // Success rate below (animated)
+  const textRate = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  textRate.setAttribute("x", cx);
+  textRate.setAttribute("y", cy + 28);
+  textRate.setAttribute("text-anchor", "middle");
+  textRate.setAttribute("font-size", "1.8em");
+  textRate.setAttribute("font-weight", "600");
+  textRate.setAttribute("fill", "#22c55e");
+  textRate.textContent = "0%";
+  svg.appendChild(textRate);
   // Animate arc and percent text
-  let animStart;
-  const animDuration = 900; // ms
-  function animateGauge(ts) {
-    if (!animStart) animStart = ts;
-    const progress = Math.min(1, (ts - animStart) / animDuration);
-    const curRate = rate * progress;
-    const fgEnd = Math.PI + curRate * Math.PI;
-    arcFg.setAttribute("d", arcPath(startAngle, fgEnd, "#22c55e", 12));
-    // Animate percent text
-    textRate.textContent = Math.round(percent * progress) + "%";
-    if (progress < 1) requestAnimationFrame(animateGauge);
-    else textRate.textContent = percent + "%";
-  }
-    // Total jobs in center
-    const textTotal = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    textTotal.setAttribute("x", cx);
-    textTotal.setAttribute("y", cy - 8);
-    textTotal.setAttribute("text-anchor", "middle");
-    textTotal.setAttribute("font-size", "2.9em");
-    textTotal.setAttribute("font-weight", "700");
-    textTotal.setAttribute("fill", "#222933");
-    textTotal.textContent = total;
-    svg.appendChild(textTotal);
-    // Success rate below (animated)
-    const textRate = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    textRate.setAttribute("x", cx);
-    textRate.setAttribute("y", cy + 28);
-    textRate.setAttribute("text-anchor", "middle");
-    textRate.setAttribute("font-size", "1.8em");
-    textRate.setAttribute("font-weight", "600");
-    textRate.setAttribute("fill", "#22c55e");
-    textRate.textContent = "0%";
-    svg.appendChild(textRate);
-    // Start animation
+  if (shouldAnimate) {
+    let animStart;
+    const animDuration = 900; // ms
+    function animateGauge(ts) {
+      if (!animStart) animStart = ts;
+      const progress = Math.min(1, (ts - animStart) / animDuration);
+      const curRate = dualGauge_rate * progress;
+      const fgEnd = Math.PI + curRate * Math.PI;
+      arcFg.setAttribute("d", arcPath(startAngle, fgEnd, "#22c55e", 12));
+      // Animate percent text
+      textRate.textContent = Math.round(dualGauge_percent * progress) + "%";
+      if (progress < 1) requestAnimationFrame(animateGauge);
+      else textRate.textContent = dualGauge_percent + "%";
+    }
     requestAnimationFrame(animateGauge);
+  } else {
+    arcFg.setAttribute("d", arcPath(startAngle, Math.PI + dualGauge_rate * Math.PI, "#22c55e", 12));
+    textRate.textContent = dualGauge_percent + "%";
+  }
   }
   function renderScatterPlot(jobs) {
     const svg = document.getElementById("analytics-scatterplot");
@@ -168,6 +204,17 @@
     svg.appendChild(yLabel);
   }
   function renderJobsHeatmap(jobs) {
+    const jobsHeatmap_counts = Array.from({length: 7}, () => Array(24).fill(0));
+    jobs.forEach(job => {
+      const t = window.toTs ? window.toTs(job[window.TimeRange?.field || "updated_at"]) : Date.parse(job[window.TimeRange?.field || "updated_at"]);
+      if (!Number.isFinite(t)) return;
+      const date = new Date(t);
+      const day = date.getDay();
+      const hour = date.getHours();
+      jobsHeatmap_counts[day][hour]++;
+    });
+    const shouldAnimate = !deepEqual(jobsHeatmap_counts, prevJobsHeatmap);
+    prevJobsHeatmap = JSON.parse(JSON.stringify(jobsHeatmap_counts));
     const svg = document.getElementById("analytics-heatmap");
     if (!svg) return;
     while (svg.firstChild) svg.removeChild(svg.firstChild);
@@ -294,6 +341,16 @@
   }
 
   function renderAirflowJobStatusDonut(jobs) {
+    const airflowDonut_airflowJobs = jobs.filter(job => parseJobType(job) === "Airflow Job");
+    const airflowDonut_stateCounts = {};
+    airflowDonut_airflowJobs.forEach(job => {
+      const state = job.status || "Unknown";
+      airflowDonut_stateCounts[state] = (airflowDonut_stateCounts[state] || 0) + 1;
+    });
+    const airflowDonut_stateKeys = Object.keys(airflowDonut_stateCounts);
+    const airflowDonut_data = airflowDonut_stateKeys.map(k => airflowDonut_stateCounts[k]);
+    const shouldAnimate = !deepEqual(airflowDonut_data, prevAirflowDonut);
+    prevAirflowDonut = JSON.parse(JSON.stringify(airflowDonut_data));
     const svg = document.getElementById("analytics-airflowjobstatus-donut");
     if (!svg) return;
     while (svg.firstChild) svg.removeChild(svg.firstChild);
@@ -341,13 +398,17 @@
       path.setAttribute("stroke", "#fff");
       path.setAttribute("stroke-width", "2");
       let animFrame, start;
-      function animateArc(ts) {
-        if (!start) start = ts;
-        const progress = Math.min(1, (ts-start)/500);
-        path.setAttribute("d", arcTween(progress));
-        if (progress < 1) animFrame = requestAnimationFrame(animateArc);
+      if (shouldAnimate) {
+        function animateArc(ts) {
+          if (!start) start = ts;
+          const progress = Math.min(1, (ts-start)/500);
+          path.setAttribute("d", arcTween(progress));
+          if (progress < 1) animFrame = requestAnimationFrame(animateArc);
+        }
+        requestAnimationFrame(animateArc);
+      } else {
+        path.setAttribute("d", arcTween(1));
       }
-      requestAnimationFrame(animateArc);
       path.addEventListener("mousemove", (evt) => {
         tooltip.innerHTML = `<b>${stateKeys[i]}</b><br>Count: <b>${data[i]}</b><br>Percent: <b>${data[i] && airflowJobs.length ? ((data[i]/airflowJobs.length*100).toFixed(1)) : 0}%</b>`;
         tooltip.style.display = "block";
@@ -375,6 +436,16 @@
   }
 
   function renderTestJobStatusDonut(jobs) {
+    const testDonut_testJobs = jobs.filter(job => parseJobType(job) === "Test Job");
+    const testDonut_stateCounts = {};
+    testDonut_testJobs.forEach(job => {
+      const state = job.status || "Unknown";
+      testDonut_stateCounts[state] = (testDonut_stateCounts[state] || 0) + 1;
+    });
+    const testDonut_stateKeys = Object.keys(testDonut_stateCounts);
+    const testDonut_data = testDonut_stateKeys.map(k => testDonut_stateCounts[k]);
+    const shouldAnimate = !deepEqual(testDonut_data, prevTestDonut);
+    prevTestDonut = JSON.parse(JSON.stringify(testDonut_data));
     // Render legend to the right of chart
     const testLegend = document.getElementById("analytics-testjobstatus-legend");
     if (testLegend) {
@@ -476,13 +547,17 @@
       path.setAttribute("stroke", "#fff");
       path.setAttribute("stroke-width", "2");
       let animFrame, start;
-      function animateArc(ts) {
-        if (!start) start = ts;
-        const progress = Math.min(1, (ts-start)/500);
-        path.setAttribute("d", arcTween(progress));
-        if (progress < 1) animFrame = requestAnimationFrame(animateArc);
+      if (shouldAnimate) {
+        function animateArc(ts) {
+          if (!start) start = ts;
+          const progress = Math.min(1, (ts-start)/500);
+          path.setAttribute("d", arcTween(progress));
+          if (progress < 1) animFrame = requestAnimationFrame(animateArc);
+        }
+        requestAnimationFrame(animateArc);
+      } else {
+        path.setAttribute("d", arcTween(1));
       }
-      requestAnimationFrame(animateArc);
       path.addEventListener("mousemove", (evt) => {
         tooltip.innerHTML = `<b>${stateKeys[i]}</b><br>Count: <b>${data[i]}</b><br>Percent: <b>${data[i] && testJobs.length ? ((data[i]/testJobs.length*100).toFixed(1)) : 0}%</b>`;
         tooltip.style.display = "block";
@@ -510,6 +585,15 @@
   }
 
   function renderJobTypeDonut(jobs) {
+    let jobTypeDonut_testCount = 0, jobTypeDonut_airflowCount = 0;
+    jobs.forEach(job => {
+      const type = parseJobType(job);
+      if (type === "Test Job") jobTypeDonut_testCount++;
+      else jobTypeDonut_airflowCount++;
+    });
+    const jobTypeDonut_data = [jobTypeDonut_testCount, jobTypeDonut_airflowCount];
+    const shouldAnimate = !deepEqual(jobTypeDonut_data, prevJobTypeDonut);
+    prevJobTypeDonut = JSON.parse(JSON.stringify(jobTypeDonut_data));
     const svg = document.getElementById("analytics-jobtype-donut");
     if (!svg) return;
     while (svg.firstChild) svg.removeChild(svg.firstChild);
@@ -565,13 +649,17 @@
       path.setAttribute("stroke", "#fff");
       path.setAttribute("stroke-width", "2");
       let animFrame, start;
-      function animateArc(ts) {
-        if (!start) start = ts;
-        const progress = Math.min(1, (ts-start)/500);
-        path.setAttribute("d", arcTween(progress));
-        if (progress < 1) animFrame = requestAnimationFrame(animateArc);
+      if (shouldAnimate) {
+        function animateArc(ts) {
+          if (!start) start = ts;
+          const progress = Math.min(1, (ts-start)/500);
+          path.setAttribute("d", arcTween(progress));
+          if (progress < 1) animFrame = requestAnimationFrame(animateArc);
+        }
+        requestAnimationFrame(animateArc);
+      } else {
+        path.setAttribute("d", arcTween(1));
       }
-      requestAnimationFrame(animateArc);
       path.addEventListener("mousemove", (evt) => {
         tooltip.innerHTML = `<b>${labels[i]}</b><br>Count: <b>${data[i]}</b><br>Percent: <b>${data[i] && (data[0]+data[1]) ? ((data[i]/(data[0]+data[1])*100).toFixed(1)) : 0}%</b>`;
         tooltip.style.display = "block";
@@ -605,6 +693,26 @@
     svg.appendChild(g);
   }
 
+  // Store previous data for change detection
+  let prevStackedBarData = null;
+  function deepEqual(a, b) {
+    if (a === b) return true;
+    if (a == null || b == null) return a === b;
+    if (typeof a !== typeof b) return false;
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) if (!deepEqual(a[i], b[i])) return false;
+      return true;
+    }
+    if (typeof a === 'object' && typeof b === 'object') {
+      const ka = Object.keys(a || {}), kb = Object.keys(b || {});
+      if (ka.length !== kb.length) return false;
+      for (const k of ka) if (!deepEqual(a[k], b[k])) return false;
+      return true;
+    }
+    return false;
+  }
+
   function renderStackedBarChart(jobs, opts={}) {
     const container = document.getElementById("analytics-chart");
     if (!container) return;
@@ -618,7 +726,10 @@
       totalBox.textContent = jobs.length;
     }
     const binMinutes = opts.binMinutes || 60;
-    const data = groupJobsByTime(jobs, binMinutes);
+  const data = groupJobsByTime(jobs, binMinutes);
+  // Only animate if data changed
+  const shouldAnimate = !deepEqual(data, prevStackedBarData);
+  prevStackedBarData = JSON.parse(JSON.stringify(data));
     const keys = ["Test Job", "Airflow Job"];
     if (!data.length) {
       container.innerHTML = '<div style="color:#888;text-align:center;padding:2em;font-size:1.2em">No jobs to display for the selected time range.</div>';
@@ -713,18 +824,25 @@
         tooltip.style("display", "none");
       });
     // Animated bars: grow from zero height
-    barGroups.selectAll("rect")
+    const bars = barGroups.selectAll("rect")
       .data(d => d)
       .join("rect")
       .attr("class", "bar-rect")
       .attr("x", d => x(d.data.bin))
-      .attr("y", y(0))
-      .attr("height", 0)
-      .attr("width", x.bandwidth())
-      .transition()
-      .duration(900)
-      .attr("y", d => y(d[1]))
-      .attr("height", d => y(d[0]) - y(d[1]));
+      .attr("width", x.bandwidth());
+    if (shouldAnimate) {
+      bars
+        .attr("y", y(0))
+        .attr("height", 0)
+        .transition()
+        .duration(900)
+        .attr("y", d => y(d[1]))
+        .attr("height", d => y(d[0]) - y(d[1]));
+    } else {
+      bars
+        .attr("y", d => y(d[1]))
+        .attr("height", d => y(d[0]) - y(d[1]));
+    }
     const legend = svg.append("g")
       .attr("transform", `translate(${width + 40},${margin.top + 40})`);
     keys.forEach((k, i) => {

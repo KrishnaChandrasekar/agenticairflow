@@ -1,13 +1,15 @@
 
+
 FROM golang:1.20-alpine AS builder
 WORKDIR /app
 COPY go-agent/. .
 RUN go mod tidy && go mod download
-RUN go build -v -o agent main.go
-
+RUN go build -v -o main main.go
 
 FROM alpine:3.18
+RUN apk add --no-cache python3 py3-pip && pip3 install supervisor
 WORKDIR /app
-COPY --from=builder /app/agent .
+COPY --from=builder /app/main /app/main
+COPY go-agent/supervisord.conf /etc/supervisord.conf
 EXPOSE 8001
-CMD ["./agent"]
+CMD ["supervisord", "-c", "/etc/supervisord.conf"]
