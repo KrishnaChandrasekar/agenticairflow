@@ -912,7 +912,16 @@ let prevJobTypeDonut = null;
   svg.appendChild(text);
   }
 
-  window.renderAnalyticsChart = function(jobs) {
+  window.renderAnalyticsChart = function(jobs, opts = {}) {
+    // If opts.animate is true, reset previous data so all charts animate
+    if (opts.animate) {
+      prevDualGauge = null;
+      prevJobsHeatmap = null;
+      prevAirflowDonut = null;
+      prevTestDonut = null;
+      prevJobTypeDonut = null;
+      prevStackedBarData = null;
+    }
     renderStackedBarChart(jobs || [], {binMinutes: 60});
     renderDualGauge(jobs || []);
     renderJobsHeatmap(jobs || []);

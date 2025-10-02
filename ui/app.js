@@ -411,7 +411,7 @@ function attachPagingHandlers(){
 
 // ---------- renderers ----------
 function renderAgents(agents){
-  const cnt=$("agent-count"); if (cnt) cnt.textContent = `${agents.length} total`;
+  // Removed agent count display as per request
   const tbody=$("agents-body"); if(!tbody) return;
   tbody.innerHTML = agents.map(a => {
     const labels = Object.entries(a.labels||{}).map(([k,v])=>`<span class="chip bg-slate-100">${k}:${v}</span>`).join(" ");
@@ -477,19 +477,22 @@ function findJobById(id){
 // ---------- drawer / logs ----------
 window.openDrawer = async (job_id, status, agent_id, log_path) => {
   state.currentJobId = job_id;
-  const title=$("drawer-title"); if(title) title.textContent = `Job ${job_id}`;
+  const title = $("drawer-title"); if (title) title.textContent = `Job ${job_id}`;
   const j = findJobById(job_id) || {};
   const created = j.created_at ? `${fmtDate(j.created_at)} · ${fmtAgo(j.created_at)}` : "-";
   const updated = j.updated_at ? `${fmtDate(j.updated_at)} · ${fmtAgo(j.updated_at)}` : "-";
-  const labelsHTML = Object.entries(j.labels || {}).map(([k,v]) => `<span class="chip bg-slate-100">${k}:${v}</span>`).join(" ");
-  const meta=$("drawer-meta"); if(meta) meta.innerHTML = `<div class="text-sm space-y-1">\
-    <div><b>Status:</b> ${status}</div>\
+  const labelsHTML = Object.entries(j.labels || {}).map(([k, v]) => `<span class=\"chip bg-slate-100\">${k}:${v}</span>`).join(" ");
+  // Use the same chip style for status as in the jobs table
+  const statusChip = `<span class=\"chip st-${status}\">${status}</span>`;
+  const meta = $("drawer-meta");
+  if (meta) meta.innerHTML = `<div class=\"text-sm space-y-1\">\
+    <div><b>Status:</b> ${statusChip}</div>\
     <div><b>Agent:</b> ${agent_id || "-"}</div>\
     <div><b>RC:</b> -</div>\
     <div><b>Created:</b> ${created}</div>\
     <div><b>Updated:</b> ${updated}</div>\
     <div><b>Labels:</b> ${labelsHTML || "-"}</div>\
-    <div><b>Log path:</b> <span class="font-mono">${log_path || "-"}</span></div>\
+    <div><b>Log path:</b> <span class=\"font-mono\">${log_path || "-"}</span></div>\
   </div>`;
   $("drawer")?.showModal();
   startLogFollow(job_id);
@@ -498,37 +501,51 @@ function closeDrawer(){ $("drawer")?.close(); stopLogFollow(); }
 $("drawer-close")?.addEventListener("click", closeDrawer);
 
 function stopLogFollow(){ if (state.logTimer) clearInterval(state.logTimer); state.logTimer = null; }
-function startLogFollow(job_id){
+// Track last drawer state to avoid unnecessary refreshes
+let lastDrawerState = { status: null, rc: null, logs: null };
+function startLogFollow(job_id) {
   stopLogFollow();
+  lastDrawerState = { status: null, rc: null, logs: null };
   const follow = async () => {
     try {
       const s = await fetchJSON(`${BASE}/status/${job_id}`);
-      const meta=$("drawer-meta"); if(meta){
-        const base = findJobById(job_id) || {};
-        const createdSrc = (s.created_at ?? base.created_at);
-        const updatedSrc = (s.updated_at ?? base.updated_at);
-        const labelsSrc = (s.labels ?? base.labels ?? {});
-        const created = createdSrc ? `${fmtDate(createdSrc)} · ${fmtAgo(createdSrc)}` : "-";
-        const updated = updatedSrc ? `${fmtDate(updatedSrc)} · ${fmtAgo(updatedSrc)}` : "-";
-        const labelsHTML = Object.entries(labelsSrc).map(([k,v]) => `<span class="chip bg-slate-100">${k}:${v}</span>`).join(" ");
-        meta.innerHTML = `<div class="text-sm space-y-1">\
-          <div><b>Status:</b> ${s.status}</div>\
-          <div><b>Agent:</b> ${s.agent_id || "-"}</div>\
-          <div><b>RC:</b> ${s.rc ?? "-"}</div>\
-          <div><b>Created:</b> ${created}</div>\
-          <div><b>Updated:</b> ${updated}</div>\
-          <div><b>Labels:</b> ${labelsHTML || "-"}</div>\
-          <div><b>Log path:</b> <span class="font-mono">${s.log_path || base.log_path || "-"}</span></div>\
-        </div>`;
-      }
       const r = await fetch(`${BASE}/logs/${job_id}`);
       const txt = await r.text();
-      const pre=$("drawer-log"); if(pre){ pre.textContent = txt; pre.scrollTop = pre.scrollHeight; }
+      // Only update if status, rc, or logs have changed
+      const statusChanged = lastDrawerState.status !== s.status;
+      const rcChanged = lastDrawerState.rc !== s.rc;
+      const logsChanged = lastDrawerState.logs !== txt;
+      if (statusChanged || rcChanged || logsChanged) {
+        lastDrawerState = { status: s.status, rc: s.rc, logs: txt };
+        const meta = $("drawer-meta");
+        if (meta) {
+          const base = findJobById(job_id) || {};
+          const createdSrc = (s.created_at ?? base.created_at);
+          const updatedSrc = (s.updated_at ?? base.updated_at);
+          const labelsSrc = (s.labels ?? base.labels ?? {});
+          const created = createdSrc ? `${fmtDate(createdSrc)} · ${fmtAgo(createdSrc)}` : "-";
+          const updated = updatedSrc ? `${fmtDate(updatedSrc)} · ${fmtAgo(updatedSrc)}` : "-";
+          const labelsHTML = Object.entries(labelsSrc).map(([k, v]) => `<span class=\"chip bg-slate-100\">${k}:${v}</span>`).join(" ");
+          // Use chip style for status
+          const statusChip = `<span class=\"chip st-${s.status}\">${s.status}</span>`;
+          meta.innerHTML = `<div class=\"text-sm space-y-1\">\
+            <div><b>Status:</b> ${statusChip}</div>\
+            <div><b>Agent:</b> ${s.agent_id || "-"}</div>\
+            <div><b>RC:</b> ${s.rc ?? "-"}</div>\
+            <div><b>Created:</b> ${created}</div>\
+            <div><b>Updated:</b> ${updated}</div>\
+            <div><b>Labels:</b> ${labelsHTML || "-"}</div>\
+            <div><b>Log path:</b> <span class=\"font-mono\">${s.log_path || base.log_path || "-"}</span></div>\
+          </div>`;
+        }
+        const pre = $("drawer-log");
+        if (pre) { pre.textContent = txt; pre.scrollTop = pre.scrollHeight; }
+      }
       if ((s.status === "SUCCEEDED" || s.status === "FAILED") && !$("log-autorefresh").checked) stopLogFollow();
-    } catch(e){ /* ignore */ }
+    } catch (e) { /* ignore */ }
   };
   follow();
-  state.logTimer = setInterval(()=>{ if ($("log-autorefresh")?.checked) follow(); }, 2000);
+  state.logTimer = setInterval(() => { if ($("log-autorefresh")?.checked) follow(); }, 2000);
 }
 
 // ---------- agents detail tab with shared time range ----------
@@ -799,6 +816,7 @@ document.addEventListener("DOMContentLoaded", function() {
   const contentJobs = document.getElementById("tab-content-jobs");
   const contentAgents = document.getElementById("tab-content-agents");
   const contentAnalytics = document.getElementById("tab-content-analytics");
+  const jobFilter = document.getElementById("job-filter");
   if (tabJobs && tabAgents && tabAnalytics && contentJobs && contentAgents && contentAnalytics) {
     tabJobs.addEventListener("click", function() {
       tabJobs.classList.add("active");
@@ -808,6 +826,7 @@ document.addEventListener("DOMContentLoaded", function() {
       contentAgents.style.display = "none";
       contentAnalytics.style.display = "none";
       stopAnalyticsAutoRefresh();
+      if (jobFilter) jobFilter.style.display = "";
     });
     tabAgents.addEventListener("click", function() {
       tabAgents.classList.add("active");
@@ -818,6 +837,7 @@ document.addEventListener("DOMContentLoaded", function() {
       contentAnalytics.style.display = "none";
       renderAgentsDetailTab();
       stopAnalyticsAutoRefresh();
+      if (jobFilter) jobFilter.style.display = "none";
     });
     tabAnalytics.addEventListener("click", function() {
       tabAnalytics.classList.add("active");
@@ -840,6 +860,7 @@ document.addEventListener("DOMContentLoaded", function() {
         window.renderAnalyticsChart(jobs);
       }
       if (analyticsAutoRefresh) startAnalyticsAutoRefresh();
+      if (jobFilter) jobFilter.style.display = "none";
     });
   }
 });
@@ -987,11 +1008,31 @@ async function submitTestJob(){
 $("tj-send")?.addEventListener("click", submitTestJob);
 
 // ---------- refresh ----------
-async function refreshAll(){
-  try{
+// Track last jobs snapshot for table refresh optimization
+let lastJobsSnapshot = null;
+function jobsEqual(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const aj = a[i], bj = b[i];
+    if (!aj || !bj) return false;
+    // Compare key fields: job_id, status, rc, agent_id, updated_at
+    if (aj.job_id !== bj.job_id || aj.status !== bj.status || aj.rc !== bj.rc || aj.agent_id !== bj.agent_id || aj.updated_at !== bj.updated_at) return false;
+  }
+  return true;
+}
+async function refreshAll() {
+  try {
     hideError();
     const [agents, jobs] = await Promise.all([fetchAgents(), fetchJobs()]);
-    state.agents = agents; state.jobs = jobs;
+    state.agents = agents;
+    // Only update and re-render jobs table if jobs data has changed
+    let jobsChanged = !jobsEqual(jobs, lastJobsSnapshot);
+    if (jobsChanged) {
+      state.jobs = jobs;
+      lastJobsSnapshot = jobs.map(j => ({
+        job_id: j.job_id, status: j.status, rc: j.rc, agent_id: j.agent_id, updated_at: j.updated_at
+      }));
+    }
     const sel = $("tj-agent");
     if (sel) {
       const prev = sel.value;
@@ -999,8 +1040,10 @@ async function refreshAll(){
       // Restore previous selection if still present
       if (prev && agents.some(a => a.agent_id === prev)) sel.value = prev;
     }
-    renderAgents(agents); renderJobs(jobs); renderByAgent(jobs);
-  }catch(e){ console.error(e); showError(e.message); }
+    renderAgents(agents);
+    if (jobsChanged) renderJobs(jobs);
+    renderByAgent(jobs);
+  } catch (e) { console.error(e); showError(e.message); }
 }
 
 function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEach(th => { th.onclick = () => setSort(th.dataset.sort); }); }
@@ -1045,7 +1088,7 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
     }
     setManualRefreshState();
   });
-  manualRefreshBtn?.addEventListener("click", () => {
+  manualRefreshBtn?.addEventListener("click", async () => {
     if (!manualRefreshBtn.disabled) {
       // Add visual feedback
       const icon = document.getElementById("refresh-icon");
@@ -1057,7 +1100,21 @@ function attachSortHandlers(){ document.querySelectorAll('th[data-sort]').forEac
           manualRefreshBtn.classList.remove("bg-blue-100", "ring", "ring-blue-300");
         }, 700);
       }
-      refreshAll();
+      // If Analytics tab is active, fetch latest jobs and animate chart
+      const tabAnalytics = document.getElementById("tab-analytics");
+      const contentAnalytics = document.getElementById("tab-content-analytics");
+      if (tabAnalytics && tabAnalytics.classList.contains("active") && contentAnalytics && contentAnalytics.style.display !== "none") {
+        try {
+          const jobs = await fetchJobs();
+          state.jobs = jobs;
+        } catch (e) {
+          showError("Failed to refresh analytics data: " + (e && e.message ? e.message : e));
+        }
+        // Always animate, even if jobs data is unchanged
+        if (window.renderAnalyticsChart) window.renderAnalyticsChart(state.jobs, { animate: true });
+      } else {
+        refreshAll();
+      }
     }
   });
   // --- Submit Test Job button enable/disable logic ---
