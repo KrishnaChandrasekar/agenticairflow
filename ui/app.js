@@ -509,7 +509,7 @@ async function renderAgentsDetailTab(){
               playColor = '#cbd5e1'; // Tailwind slate-300
               playCursor = 'not-allowed';
               playDisabled = true;
-              playTooltip = 'Test Job can only be submitted for Registered agents';
+              playTooltip = 'Test Job can only be submitted for Registered/Available agents';
             }
             const testJobBtn = `
               <span class=\"relative group\" style=\"display:inline-block;margin-right:0.7em;\">

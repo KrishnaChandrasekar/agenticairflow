@@ -1,9 +1,11 @@
 FROM python:3.11-slim
 RUN apt-get update && apt-get install -y sudo bash procps && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir supervisor
 WORKDIR /app
 COPY agent/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY agent/ .
+COPY agent/supervisord.conf /etc/supervisord.conf
 ENV AGENT_HOME=/app/agent_jobs
 EXPOSE 8001
-CMD ["python","app.py"]
+CMD ["supervisord", "-c", "/etc/supervisord.conf"]

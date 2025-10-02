@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"bytes"
+	"strings"
 	"github.com/gin-gonic/gin"
 	"syscall"
 )
@@ -88,7 +89,81 @@ import (
 		agentLabels := getEnv("AGENT_LABELS", "{\"os\":\"linux\",\"zone\":\"go\"}")
 		autoRegister := getEnvBool("AGENT_AUTO_REGISTER", true)
 
-		os.MkdirAll(agentHome, 0755)
+
+	       os.MkdirAll(agentHome, 0755)
+
+	       // --- Reconciliation logic: scan job dirs and report to router ---
+	       go func() {
+		       jobs := []map[string]interface{}{}
+		       entries, err := os.ReadDir(agentHome)
+		       if err == nil {
+			       for _, entry := range entries {
+				       if !entry.IsDir() { continue }
+				       jobID := entry.Name()
+				       jobDir := filepath.Join(agentHome, jobID)
+				       pidPath := filepath.Join(jobDir, "pid")
+				       rcPath := filepath.Join(jobDir, "rc")
+				       status := "UNKNOWN"
+				       var pid *int = nil
+				       var rc *int = nil
+				       // Read pid
+				       if b, err := os.ReadFile(pidPath); err == nil {
+					       if p, err := strconv.Atoi(string(b)); err == nil {
+						       pid = &p
+					       }
+				       }
+				       // Check if process is alive
+				       alive := false
+				       if pid != nil && *pid > 0 {
+					       proc, err := os.FindProcess(*pid)
+					       if err == nil {
+						       if err := proc.Signal(syscall.Signal(0)); err == nil {
+							       alive = true
+						       }
+					       }
+				       }
+				       if alive {
+					       status = "RUNNING"
+				       } else if b, err := os.ReadFile(rcPath); err == nil {
+					       if r, err := strconv.Atoi(string(b)); err == nil {
+						       rc = &r
+						       if r == 0 {
+							       status = "SUCCEEDED"
+						       } else {
+							       status = "FAILED"
+						       }
+					       } else {
+						       rcVal := 1
+						       rc = &rcVal
+						       status = "FAILED"
+					       }
+				       }
+				       jobs = append(jobs, map[string]interface{}{
+					       "job_id": jobID,
+					       "status": status,
+					       "pid": func() interface{} { if pid != nil { return *pid } else { return nil } }(),
+					       "rc": func() interface{} { if rc != nil { return *rc } else { return nil } }(),
+				       })
+			       }
+		       }
+		       if len(jobs) > 0 {
+			       payload := map[string]interface{}{
+				       "agent_id": agentID,
+				       "jobs": jobs,
+			       }
+			       b, _ := json.Marshal(payload)
+			       req, err := http.NewRequest("POST", routerURL+"/agents/reconcile", bytes.NewBuffer(b))
+			       if err == nil {
+				       req.Header.Set("X-Agent-Token", agentToken)
+				       req.Header.Set("Content-Type", "application/json")
+				       client := &http.Client{Timeout: 10 * time.Second}
+				       resp, err := client.Do(req)
+				       if err == nil {
+					       defer resp.Body.Close()
+				       }
+			       }
+		       }
+	       }()
 
 		// Auto-register and heartbeat
 		if autoRegister {
@@ -169,16 +244,17 @@ import (
 				c.JSON(401, gin.H{"error": "unauthorized"})
 				return
 			}
-			jobID := c.Param("job_id")
+			   jobID := c.Param("job_id")
 			   jobDir := filepath.Join(agentHome, jobID)
 			   rcPath := filepath.Join(jobDir, "rc")
 			   statusPath := filepath.Join(jobDir, "status.txt")
 			   logPath := filepath.Join(jobDir, "run.log")
 			   pidPath := filepath.Join(jobDir, "pid")
 
-			   // 1. If rc file exists, use it
+			   // Always read status and rc from files for latest state
+			   // 1. If rc file exists, use it and always update status.txt
 			   if rcBytes, err := os.ReadFile(rcPath); err == nil {
-				   rcStr := string(rcBytes)
+				   rcStr := strings.TrimSpace(string(rcBytes))
 				   rc, err := strconv.Atoi(rcStr)
 				   if err != nil {
 					   rc = 1
@@ -187,18 +263,19 @@ import (
 				   if rc != 0 {
 					   statusVal = "FAILED"
 				   }
-				   // Log and persist status if changed
+				   // Always update status.txt to match rc
+				   os.WriteFile(statusPath, []byte(statusVal), 0644)
+				   // Log status if changed
 				   lastStatus := ""
-				   if sBytes, err := os.ReadFile(statusPath); err == nil {
+				   if sBytes, err := os.ReadFile(logPath); err == nil {
 					   lastStatus = string(sBytes)
 				   }
-				   if lastStatus != statusVal {
+				   // Only log if not already present in log
+				   if !strings.Contains(lastStatus, "[agent] status="+statusVal) {
 					   f, _ := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 					   f.WriteString("[agent] status=" + statusVal + "\n")
 					   f.Close()
-					   os.WriteFile(statusPath, []byte(statusVal), 0644)
 				   }
-				   // Always return rc as integer, never string or null
 				   c.JSON(200, gin.H{"status": statusVal, "job_id": jobID, "log_path": logPath, "rc": rc})
 				   return
 			   }
@@ -211,7 +288,6 @@ import (
 			   if pid > 0 {
 				   proc, err := os.FindProcess(pid)
 				   if err == nil {
-					   // Try sending signal 0
 					   if err := proc.Signal(syscall.Signal(0)); err == nil {
 						   alive = true
 					   }
@@ -228,7 +304,6 @@ import (
 					   f.Close()
 					   os.WriteFile(statusPath, []byte("RUNNING"), 0644)
 				   }
-				   // For running jobs, always return rc as nil (Go nil maps to JSON null)
 				   c.JSON(200, gin.H{"status": "RUNNING", "job_id": jobID, "log_path": logPath, "rc": nil})
 				   return
 			   }
@@ -333,10 +408,7 @@ import (
 	   job.Status = StatusRunning
 	   job.UpdatedAt = time.Now()
 
-	   shell := "sh"
-	   if _, err := exec.LookPath("bash"); err == nil {
-		   shell = "bash"
-	   }
+	   shell := "sh" // Always use POSIX sh for portability
 
 	   logFile, err := os.Create(job.LogPath)
 	   if err != nil {
@@ -347,10 +419,8 @@ import (
 	   }
 	   defer logFile.Close()
 
-	   // Prepare status and rc file paths
-	   jobDir := filepath.Dir(job.LogPath)
-	   statusPath := filepath.Join(jobDir, "status.txt")
-	   rcPath := filepath.Join(jobDir, "rc")
+		// Prepare jobDir for pid/log files
+		jobDir := filepath.Dir(job.LogPath)
 
 	   // Log command and CWD
 	   logFile.WriteString("Command: " + job.Command + "\n")
@@ -367,8 +437,15 @@ import (
 		   }
 	   }
 
-	   cmd := exec.Command(shell, "-c", job.Command)
-	   cmd.Dir = job.Cwd
+			// POSIX-compliant: always use sh, background the whole subshell, use only portable syntax
+			rcPath := filepath.Join(jobDir, "rc")
+				// Use sh -c '<cmd>' so $? is always the user command's exit code
+				safeCmd := strings.ReplaceAll(job.Command, "'", "'\\''")
+					core := "( cd '" + jobDir + "' || exit 255; sh -c '" + safeCmd + "'; echo $? > '" + rcPath + "' )"
+					launchCmd := "setsid nohup sh -c \"" + core + "\" >> '" + job.LogPath + "' 2>&1 & echo $!"
+			logFile.WriteString("[agent] launchCmd: " + launchCmd + "\n")
+	   cmd := exec.Command(shell, "-c", launchCmd)
+	   cmd.Dir = "/" // always start from root, cd in shell
 	   cmd.Stdout = logFile
 	   cmd.Stderr = logFile
 	   if err := cmd.Start(); err != nil {
@@ -378,72 +455,33 @@ import (
 		   job.UpdatedAt = time.Now()
 		   return
 	   }
-	   job.PID = cmd.Process.Pid
+	   // Wait for the shell to finish (it should exit immediately after echoing $!)
+	   cmd.Wait()
+	   // Read the last line of the log file to get the PID
+	   pid := 0
+	   if f, err := os.Open(job.LogPath); err == nil {
+		   defer f.Close()
+		   stat, _ := f.Stat()
+		   size := stat.Size()
+		   if size > 4096 { f.Seek(-4096, 2) }
+		   buf := make([]byte, 4096)
+		   n, _ := f.Read(buf)
+		   lines := bytes.Split(buf[:n], []byte("\n"))
+		   for i := len(lines) - 1; i >= 0; i-- {
+			   line := string(lines[i])
+			   if p, err := strconv.Atoi(line); err == nil && p > 0 {
+				   pid = p
+				   break
+			   }
+		   }
+	   }
+	   job.PID = pid
 	   // Write PID file
 	   pidPath := filepath.Join(jobDir, "pid")
 	   os.WriteFile(pidPath, []byte(strconv.Itoa(job.PID)), 0644)
-	   done := make(chan error)
-	   go func() { done <- cmd.Wait() }()
-
-	   // Only update status/RC if job is not already completed
-	   setFinal := func(rc int) {
-		   jobsMu.Lock()
-		   if job.Status != StatusSucceeded && job.Status != StatusFailed {
-			   job.RC = rc
-			   statusVal := "SUCCEEDED"
-			   if rc != 0 {
-				   statusVal = "FAILED"
-			   }
-			   job.Status = JobStatus(statusVal)
-			   job.UpdatedAt = time.Now()
-			   // Write status and rc atomically: write to temp file then rename
-			   tmpStatus := statusPath + ".tmp"
-			   tmpRC := rcPath + ".tmp"
-			   os.WriteFile(tmpStatus, []byte(statusVal), 0644)
-			   os.WriteFile(tmpRC, []byte(strconv.Itoa(rc)), 0644)
-			   os.Rename(tmpStatus, statusPath)
-			   os.Rename(tmpRC, rcPath)
-			   f, err := os.OpenFile(job.LogPath, os.O_APPEND|os.O_WRONLY, 0644)
-			   if err == nil {
-				   f.WriteString("[agent] return code: " + strconv.Itoa(rc) + "\n")
-				   f.WriteString("[agent] status=" + statusVal + "\n")
-				   f.Close()
-			   }
-			   // ...removed debug log...
-		   }
-		   jobsMu.Unlock()
-	   }
-
-	   if timeout > 0 {
-		   select {
-		   case err := <-done:
-			   rc := getExitCode(err)
-			   if err != nil {
-				   logFile.WriteString("Error: Command execution failed: " + err.Error() + "\n")
-			   }
-			   // Always set RC=0 if err==nil
-			   if err == nil {
-				   setFinal(0)
-			   } else {
-				   setFinal(rc)
-			   }
-		   case <-time.After(time.Duration(timeout) * time.Second):
-			   cmd.Process.Kill()
-			   logFile.WriteString("Error: Command timed out\n")
-			   setFinal(255)
-		   }
-	   } else {
-		   err := <-done
-		   rc := getExitCode(err)
-		   if err != nil {
-			   logFile.WriteString("Error: Command execution failed: " + err.Error() + "\n")
-		   }
-		   if err == nil {
-			   setFinal(0)
-		   } else {
-			   setFinal(rc)
-		   }
-	   }
+	   // No need to wait for the detached process; just return
+	   // The status endpoint will check the process and update status/rc as needed
+	   return
 	}
 
 	// getExitCode extracts the exit code from an error returned by exec.Cmd.Wait()
