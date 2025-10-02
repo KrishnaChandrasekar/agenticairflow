@@ -16,10 +16,10 @@ with DAG(
         command="echo 'vm1 starting'; for i in 1 2 3 4 5; do echo tick:$i; sleep 2; done; echo 'vm1 done'",
         cwd="/",
     )
-    vm2_ok = AgenticSSHOperator(
-        task_id="vm2_ok",
-        agent_id="vm2",
-        command="echo 'vm2 starting'; for i in 1 2 3 4 5; do echo tick:$i; sleep 10; done; echo 'vm2 done'",
+    go_vm1_ok = AgenticSSHOperator(
+        task_id="go_vm1_ok",
+        agent_id="go_vm1",
+        command="echo 'go_vm1 starting'; for i in 1 2 3 4 5; do echo tick:$i; sleep 10; done; echo 'go_vm1 done'",
         cwd="/",
     )
     vm4_fail = AgenticSSHOperator(
@@ -28,4 +28,4 @@ with DAG(
         command="echo 'this should not run'",
         cwd="/",
     )
-    [vm1_ok, vm2_ok] >> vm4_fail
+    [vm1_ok, go_vm1_ok] >> vm4_fail

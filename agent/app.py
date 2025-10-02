@@ -253,16 +253,11 @@ def run():
     env = {**os.environ, **{k: str(v) for k, v in extra_env.items()}}
 
 
-    # Build launcher using setsid and nohup for full detachment
-    # This ensures the job survives agent crash
-    redir = f">> {shlex.quote(logp)} 2>&1"
-    core = (
-        f"cd {shlex.quote(cwd)} || exit 255; "
-        f"( {cmd} ); rc=$?; echo $rc > {shlex.quote(rcp)}"
-    )
-    # Use setsid and nohup for maximum detachment
-    background = f"setsid nohup bash -c '( {core} ) {redir}' & echo $! > {shlex.quote(pidp)}"
-    launch = f"{SHELL} -lc {shlex.quote(background)}"
+
+    # Build robust, POSIX-compliant detachment command (Go agent style)
+    safe_cmd = cmd.replace("'", "'\\''")
+    core = f"( cd {shlex.quote(home)} || exit 255; sh -c '{safe_cmd}'; echo $? > {shlex.quote(rcp)} )"
+    launch = f"setsid nohup sh -c \"{core}\" >> {shlex.quote(logp)} 2>&1 & echo $! > {shlex.quote(pidp)}"
     if run_as:
         launch = f"sudo -u {shlex.quote(run_as)} {launch}"
 
@@ -270,7 +265,7 @@ def run():
 
     # Spawn
     try:
-        subprocess.Popen([SHELL, "-lc", launch], env=env)
+        subprocess.Popen(["sh", "-c", launch], env=env)
     except Exception as e:
         _writeln(logp, f"[agent] spawn exception: {e}\n")
         _writeln(logp, f"[agent] status=FAILED\n")
