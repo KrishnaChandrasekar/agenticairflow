@@ -815,8 +815,8 @@ let prevJobTypeDonut = null;
           `<div style='color:${color("Airflow Job")};'>Airflow Job: ${d["Airflow Job"] || 0}</div>`
         )
         .style("display", "block")
-        .style("left", (event.offsetX + 30) + "px")
-        .style("top", (event.offsetY + 10) + "px");
+        .style("left", (event.clientX + 18) + "px")
+        .style("top", (event.clientY + 10) + "px");
       })
       .on("mouseleave", function() {
         svg.selectAll(".bar-rect").attr("opacity", 1);
