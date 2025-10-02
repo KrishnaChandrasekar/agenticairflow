@@ -1,3 +1,46 @@
+// --- AGENTS FILTER CHIPS ---
+function currentAgentsFilterChips() {
+  const chips = [];
+  Object.entries(agentsFilters).forEach(([k, v]) => {
+    if (v != null && String(v).trim() !== '') {
+      chips.push({ key: k, value: String(v).trim() });
+    }
+  });
+  return chips;
+}
+
+function renderAgentsFilterChips() {
+  const host = $("agents-chips");
+  if (!host) return;
+  const chips = currentAgentsFilterChips();
+  if (!chips.length) {
+    host.innerHTML = '';
+    return;
+  }
+  host.innerHTML = chips.map(c =>
+    `<span class="chip bg-slate-200 inline-flex items-center gap-1">
+       <span class="text-xs">${c.key}: <strong>${c.value}</strong></span>
+       <button data-chip="${c.key}" class="ml-1 text-xs px-1 rounded bg-slate-300">×</button>
+     </span>`
+  ).join(" ");
+  host.querySelectorAll('button[data-chip]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const k = btn.dataset.chip;
+      agentsFilters[k] = '';
+      const elMap = {
+        agent_id: 'f-agent_id-agents',
+        url: 'f-url-agents',
+        labels: 'f-labels-agents',
+        status: 'f-status-agents',
+        availability: 'f-availability-agents'
+      };
+      const el = $(elMap[k]);
+      if (el) { if (el.tagName === 'SELECT') el.value = ''; else el.value = ''; }
+      agentsPaging.page = 1;
+      renderAgentsDetailTab();
+    });
+  });
+}
 // Manual and auto refresh for analytics
 document.addEventListener("DOMContentLoaded", () => {
   const analyticsManualRefresh = document.getElementById("analytics-manual-refresh");
@@ -568,6 +611,91 @@ function agentJobInTimeRange(job) {
   }
 }
 
+// --- AGENTS FILTER STATE ---
+const agentsFilters = {
+  agent_id: '',
+  url: '',
+  labels: '',
+  status: '',
+  availability: ''
+};
+
+function applyAgentsFilters(list) {
+  let out = list.slice();
+  if (agentsFilters.agent_id)
+    out = out.filter(a => includesAll(a.agent_id || '', agentsFilters.agent_id));
+  if (agentsFilters.url)
+    out = out.filter(a => includesAll(a.url || '', agentsFilters.url));
+  if (agentsFilters.labels)
+    out = out.filter(a => matchLabels(a.labels, agentsFilters.labels));
+  if (agentsFilters.status) {
+    // Status filter: matches display string
+    out = out.filter(a => {
+      let status = "Registered";
+      let lastHbMs = toTs(a.last_heartbeat);
+      let nowMs = Date.now();
+      const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000;
+      if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
+        if (a.active) status = "Registered";
+        else status = "Registered";
+      } else if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
+        status = "Discovered";
+      }
+      // UI filter values: Registered(Online), Registered(Offline), Discovered
+      if (agentsFilters.status === "Registered(Online)") {
+        return status === "Registered" && a.active && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS);
+      } else if (agentsFilters.status === "Registered(Offline)") {
+        return status === "Registered" && (!a.active || (nowMs - lastHbMs >= OFFLINE_THRESHOLD_MS));
+      } else {
+        return status === agentsFilters.status;
+      }
+    });
+  }
+  if (agentsFilters.availability) {
+    out = out.filter(a => {
+      let availability = "Inactive";
+      let lastHbMs = toTs(a.last_heartbeat);
+      let nowMs = Date.now();
+      const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000;
+      if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
+        if (a.active) availability = "Active";
+        else availability = "Inactive";
+      }
+      return availability === agentsFilters.availability;
+    });
+  }
+  return out;
+}
+
+function bindAgentsColumnFilters() {
+  const ids = [
+    ['agent_id', 'f-agent_id-agents'],
+    ['url', 'f-url-agents'],
+    ['labels', 'f-labels-agents'],
+    ['status', 'f-status-agents'],
+    ['availability', 'f-availability-agents']
+  ];
+  ids.forEach(([k, elid]) => {
+    const el = $(elid); if (!el) return;
+    const handler = () => {
+      agentsFilters[k] = (el.value || '').trim();
+      agentsPaging.page = 1;
+      renderAgentsDetailTab();
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+  });
+  const clr = $('f-clear-all-agents');
+  if (clr) {
+    clr.addEventListener('click', () => {
+      Object.keys(agentsFilters).forEach(k => agentsFilters[k] = '');
+      ids.forEach(([k, elid]) => { const el = $(elid); if (el) { if (el.tagName === 'SELECT') el.value = ''; else el.value = ''; } });
+      agentsPaging.page = 1;
+      renderAgentsDetailTab();
+    });
+  }
+}
+
 async function renderAgentsDetailTab(){
   const body=$("agents-detail-body"); if (!body) return;
   const colTitle = document.getElementById("agents-jobs-col-title");
@@ -583,8 +711,10 @@ async function renderAgentsDetailTab(){
       }
   }));
   const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
-  // Apply pagination to agents list
-  const pagedAgents = applyAgentsPagination(state.agents || []);
+  // Apply filters and pagination to agents list
+  const filteredAgents = applyAgentsFilters(state.agents || []);
+  renderAgentsFilterChips();
+  const pagedAgents = applyAgentsPagination(filteredAgents);
   body.innerHTML = pagedAgents.map((a, idx) => {
     const labels = Object.entries(a.labels||{}).map(([k,v]) => `<span class=\"chip bg-slate-100\">${k}:${v}</span>`).join(" ");
     let status = "Registered";
@@ -602,6 +732,9 @@ async function renderAgentsDetailTab(){
     } else if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
       status = "Discovered";
       availability = "Active";
+    } else {
+      status = "Offline";
+      availability = "Inactive";
     }
     // Add Deregister button only for Registered agents
     const rowId = `agent-row-${idx}`;
@@ -612,11 +745,12 @@ async function renderAgentsDetailTab(){
             let playCursor = 'pointer';
             let playDisabled = false;
             let playTooltip = 'Submit a Test Job';
-            if (status !== 'Registered') {
+            // Enable only if status is Registered AND availability is Active
+            if (!(status === 'Registered' && availability === 'Active')) {
               playColor = '#cbd5e1'; // Tailwind slate-300
               playCursor = 'not-allowed';
               playDisabled = true;
-              playTooltip = 'Test Job can only be submitted for Registered agents';
+              playTooltip = 'Test Job can only be submitted for Registered & Active agents';
             }
             const testJobBtn = `
               <span class=\"relative group\" style=\"display:inline-block;margin-right:0.7em;\">
@@ -652,8 +786,14 @@ async function renderAgentsDetailTab(){
     });
   }, 1000);
 
+
   // Attach pagination handlers (safe to call multiple times)
   attachAgentsPagingHandlers();
+
+  // Bind filter handlers (safe to call multiple times)
+  bindAgentsColumnFilters();
+  // Render filter chips (safe to call multiple times)
+  renderAgentsFilterChips();
 
   // Add hover effect for Deregister button
   setTimeout(() => {
