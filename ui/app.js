@@ -1,3 +1,85 @@
+// Manual and auto refresh for analytics
+document.addEventListener("DOMContentLoaded", () => {
+  const analyticsManualRefresh = document.getElementById("analytics-manual-refresh");
+  const autoRefreshCheckbox = document.getElementById("analytics-auto-refresh");
+
+  function updateManualRefreshState() {
+    if (analyticsManualRefresh && autoRefreshCheckbox) {
+      analyticsManualRefresh.disabled = !!autoRefreshCheckbox.checked;
+      analyticsManualRefresh.classList.toggle("opacity-50", !!autoRefreshCheckbox.checked);
+      analyticsManualRefresh.classList.toggle("cursor-not-allowed", !!autoRefreshCheckbox.checked);
+    }
+  }
+
+  if (analyticsManualRefresh) {
+    analyticsManualRefresh.addEventListener("click", () => {
+      if (analyticsManualRefresh.disabled) return;
+      if (window.renderAnalyticsChart) window.renderAnalyticsChart(state.jobs);
+    });
+  }
+
+  if (autoRefreshCheckbox) {
+    analyticsAutoRefresh = autoRefreshCheckbox.checked;
+    updateManualRefreshState();
+    autoRefreshCheckbox.addEventListener("change", () => {
+      analyticsAutoRefresh = autoRefreshCheckbox.checked;
+      updateManualRefreshState();
+      if (analyticsAutoRefresh && document.getElementById("tab-analytics").classList.contains("active")) {
+        startAnalyticsAutoRefresh();
+      } else {
+        stopAnalyticsAutoRefresh();
+      }
+    });
+  }
+});
+// --- Analytics auto-refresh state ---
+let analyticsAutoRefresh = true;
+let analyticsRefreshInterval = null;
+
+function startAnalyticsAutoRefresh() {
+  stopAnalyticsAutoRefresh();
+  if (!analyticsAutoRefresh) return;
+  analyticsRefreshInterval = setInterval(() => {
+    const tabAnalytics = document.getElementById("tab-analytics");
+    if (tabAnalytics && tabAnalytics.classList.contains("active")) {
+      if (window.renderAnalyticsChart) window.renderAnalyticsChart(state.jobs);
+    }
+  }, 5000); // refresh every 5s
+}
+
+function stopAnalyticsAutoRefresh() {
+  if (analyticsRefreshInterval) {
+    clearInterval(analyticsRefreshInterval);
+    analyticsRefreshInterval = null;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const autoRefreshCheckbox = document.getElementById("analytics-auto-refresh");
+  if (autoRefreshCheckbox) {
+    analyticsAutoRefresh = autoRefreshCheckbox.checked;
+    autoRefreshCheckbox.addEventListener("change", () => {
+      analyticsAutoRefresh = autoRefreshCheckbox.checked;
+      if (analyticsAutoRefresh && document.getElementById("tab-analytics").classList.contains("active")) {
+        startAnalyticsAutoRefresh();
+      } else {
+        stopAnalyticsAutoRefresh();
+      }
+    });
+  }
+});
+// Go to Jobs Tab button handler
+document.addEventListener("DOMContentLoaded", function() {
+  const gotoJobsBtn = document.getElementById("tj-goto-jobs");
+  if (gotoJobsBtn) {
+    gotoJobsBtn.onclick = function() {
+      // Switch to Jobs tab
+      document.getElementById("tab-jobs")?.click();
+      // Close the submit dialog if open
+      document.getElementById("submit-dialog")?.close();
+    };
+  }
+});
 // Pagination state for Agents tab
 const agentsPaging = {
   page: 1,
@@ -509,7 +591,7 @@ async function renderAgentsDetailTab(){
               playColor = '#cbd5e1'; // Tailwind slate-300
               playCursor = 'not-allowed';
               playDisabled = true;
-              playTooltip = 'Test Job can only be submitted for Registered/Available agents';
+              playTooltip = 'Test Job can only be submitted for Registered agents';
             }
             const testJobBtn = `
               <span class=\"relative group\" style=\"display:inline-block;margin-right:0.7em;\">
@@ -725,6 +807,7 @@ document.addEventListener("DOMContentLoaded", function() {
       contentJobs.style.display = "block";
       contentAgents.style.display = "none";
       contentAnalytics.style.display = "none";
+      stopAnalyticsAutoRefresh();
     });
     tabAgents.addEventListener("click", function() {
       tabAgents.classList.add("active");
@@ -734,6 +817,7 @@ document.addEventListener("DOMContentLoaded", function() {
       contentAgents.style.display = "block";
       contentAnalytics.style.display = "none";
       renderAgentsDetailTab();
+      stopAnalyticsAutoRefresh();
     });
     tabAnalytics.addEventListener("click", function() {
       tabAnalytics.classList.add("active");
@@ -755,6 +839,7 @@ document.addEventListener("DOMContentLoaded", function() {
       if (window.renderAnalyticsChart) {
         window.renderAnalyticsChart(jobs);
       }
+      if (analyticsAutoRefresh) startAnalyticsAutoRefresh();
     });
   }
 });
@@ -782,11 +867,16 @@ async function submitTestJob(){
   const payload = { command: cmd, labels };
   const out = $("tj-out"); if (out) out.textContent = "submitting...";
   const banner = document.getElementById("tj-agent-status-banner");
-  // Only clear previous agent status banner, not for test job submit message
+  const submitBanner = document.getElementById("tj-submit-banner");
+  // Clear previous banners
   if (banner) {
     banner.classList.add("hidden");
     banner.textContent = "";
     banner.className = "hidden mb-2 px-3 py-2 rounded text-sm";
+  }
+  if (submitBanner) {
+    submitBanner.className = "hidden mt-2 text-sm px-3 py-2 rounded";
+    submitBanner.textContent = "";
   }
   try {
     const r = await fetch(`${BASE}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job: payload, route }) });
@@ -795,15 +885,34 @@ async function submitTestJob(){
     refreshAll();
     // Try to extract job_id from response (robust)
     let jobId = "";
+    let submitSuccess = false;
     try {
       // Try JSON parse first
       const jobObj = JSON.parse(text);
-      if (jobObj && jobObj.job_id) jobId = jobObj.job_id;
-      else if (jobObj && jobObj.id) jobId = jobObj.id;
+      if (jobObj && jobObj.job_id) { jobId = jobObj.job_id; submitSuccess = true; }
+      else if (jobObj && jobObj.id) { jobId = jobObj.id; submitSuccess = true; }
     } catch {
       // Fallback to regex
       const jobMatch = text.match(/job_id\s*[:=]\s*['\"]?(\w+)["']?/i);
-      if (jobMatch) jobId = jobMatch[1];
+      if (jobMatch) { jobId = jobMatch[1]; submitSuccess = true; }
+    }
+    // Show banner for success
+    if (submitBanner) {
+      if (submitSuccess) {
+        submitBanner.className = "mt-2 text-sm px-3 py-2 rounded bg-green-50 text-green-800 border border-green-200";
+        submitBanner.textContent = "Job Submitted Successfully";
+      } else {
+        submitBanner.className = "mt-2 text-sm px-3 py-2 rounded bg-red-50 text-red-800 border border-red-200";
+        submitBanner.textContent = "Job submission failed";
+      }
+      submitBanner.style.display = "block";
+      // Auto-hide after 2 seconds if dialog is still open
+      setTimeout(() => {
+        const dialog = document.getElementById("submit-dialog");
+        if (dialog && dialog.open) {
+          submitBanner.style.display = "none";
+        }
+      }, 2000);
     }
     // If jobId found, store in localStorage and start polling for status
     if (jobId) {
@@ -811,7 +920,6 @@ async function submitTestJob(){
         testJobIds.push(jobId);
         localStorage.setItem("testJobIds", JSON.stringify(testJobIds));
       }
-  // (Removed) No test job submitted message display
       let pollCount = 0;
       let lastStatus = "RUNNING";
       const pollStatus = async () => {
@@ -832,11 +940,26 @@ async function submitTestJob(){
             }
             return j;
           });
+          // Live update the green box if dialog is open
+          const dialog = document.getElementById("submit-dialog");
+          const out = document.getElementById("tj-out");
+          if (dialog && dialog.open && out) {
+            // Find the latest job object for this jobId
+            const jobObj = state.jobs.find(j => String(j.job_id) === String(jobId));
+            if (jobObj) {
+              out.textContent = JSON.stringify(jobObj, null, 2);
+            }
+          }
           if (updated) renderJobs(state.jobs);
+          const analyticsTab = document.getElementById("tab-analytics");
           if (lastStatus === "RUNNING" && pollCount < 60) {
             setTimeout(pollStatus, 2000); // poll every 2s, max 2min
           } else {
             renderJobs(state.jobs);
+            // Refresh analytics charts only after job reaches final state
+            if (analyticsTab && analyticsTab.classList.contains("active") && window.renderAnalyticsChart) {
+              window.renderAnalyticsChart(state.jobs);
+            }
           }
         } catch {
           // If error, try again up to max pollCount
@@ -847,6 +970,18 @@ async function submitTestJob(){
     }
   } catch (e) {
     if (out) out.textContent = "error: " + e.message;
+    if (submitBanner) {
+      submitBanner.className = "mt-2 text-sm px-3 py-2 rounded bg-red-50 text-red-800 border border-red-200";
+      submitBanner.textContent = "Job submission failed: " + e.message;
+      submitBanner.style.display = "block";
+      // Auto-hide after 2 seconds if dialog is still open
+      setTimeout(() => {
+        const dialog = document.getElementById("submit-dialog");
+        if (dialog && dialog.open) {
+          submitBanner.style.display = "none";
+        }
+      }, 2000);
+    }
   }
 }
 $("tj-send")?.addEventListener("click", submitTestJob);

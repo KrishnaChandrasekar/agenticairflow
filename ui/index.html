@@ -255,6 +255,15 @@
           </div>
         </div>
         <div id="tab-content-analytics" style="display:none; min-height:400px;">
+          <div class="flex flex-row justify-end mb-1">
+            <label class="text-sm flex items-center gap-1" style="align-items:center;">
+              <input type="checkbox" id="analytics-auto-refresh" checked style="vertical-align: middle;" />
+              Auto
+              <button id="analytics-manual-refresh" class="ml-2 px-2 py-1 border rounded bg-slate-200" title="Refresh now">
+                <span id="analytics-refresh-icon">🔄</span>
+              </button>
+            </label>
+          </div>
           <div class="flex flex-row items-stretch gap-6 mb-1">
             <div class="analytics-gauge-box analytics-gauge-dual" style="min-width:320px;">
               <span class="analytics-gauge-title">Total Jobs &amp; Success Rate</span>
@@ -352,7 +361,9 @@
           placeholder='{} (or {"os":"linux"})'></textarea>
         <div class="flex items-center gap-2">
           <button id="tj-send" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded">Submit</button>
-          <span class="text-xs text-slate-500">Submit runs on the selected agent (or via labels if left blank).</span>
+          <button id="tj-goto-jobs" class="ml-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded" type="button">Show All Jobs</button>
+        </div>
+        <div id="tj-submit-banner" class="hidden mt-2 text-sm px-3 py-2 rounded"></div>
         </div>
         <pre id="tj-out" class="p-2 rounded overflow-auto h-24"
           style="font-size:0.9rem;white-space:pre-wrap;word-break:break-word;font-family:SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#3a4a3c;color:#e6ffe6;"></pre>
