@@ -773,7 +773,11 @@ let prevJobTypeDonut = null;
       .style("text-anchor", "end");
     svg.append("g")
       .attr("transform", `translate(${margin.left},0)`)
-      .call(d3.axisLeft(y));
+      .call(
+        d3.axisLeft(y)
+          .ticks(Math.ceil(y.domain()[1]))
+          .tickFormat(d => Number.isInteger(d) ? d : "")
+      );
     const barGroups = svg.selectAll(".serie")
       .data(stacked)
       .join("g")
