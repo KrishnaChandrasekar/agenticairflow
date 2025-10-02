@@ -587,20 +587,28 @@ async function renderAgentsDetailTab(){
   const pagedAgents = applyAgentsPagination(state.agents || []);
   body.innerHTML = pagedAgents.map((a, idx) => {
     const labels = Object.entries(a.labels||{}).map(([k,v]) => `<span class=\"chip bg-slate-100\">${k}:${v}</span>`).join(" ");
-    let status = "Offline";
+    let status = "Registered";
+    let availability = "Inactive";
     let lastHbMs = toTs(a.last_heartbeat);
     let nowMs = Date.now();
-    if (a.active && lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
-      status = "Registered";
+    if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
+      if (a.active) {
+        status = "Registered";
+        availability = "Active";
+      } else {
+        status = "Registered";
+        availability = "Inactive";
+      }
     } else if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
       status = "Discovered";
+      availability = "Active";
     }
     // Add Deregister button only for Registered agents
     const rowId = `agent-row-${idx}`;
-    const deregBtn = (status === "Registered") ? `<button class=\"px-2 py-1 text-xs bg-red-200 rounded agent-dereg-btn\" data-rowid=\"${rowId}\" onclick=\"deregisterAgent('${a.agent_id}')\">Deregister</button>` : "";
+  const deregBtn = (status === "Registered") ? `<button class="px-2 py-1 text-xs bg-red-200 rounded agent-dereg-btn" data-rowid="${rowId}" onclick="deregisterAgent('${a.agent_id}')">Deregister</button>` : "";
             // Add large Unicode Play button for all agents with tooltip, no background or border
             // Play button: green and clickable if Registered, else greyed out and unclickable
-            let playColor = '#22c55e';
+            let playColor = '#16a34a';
             let playCursor = 'pointer';
             let playDisabled = false;
             let playTooltip = 'Submit a Test Job';
@@ -616,15 +624,21 @@ async function renderAgentsDetailTab(){
                 <span class=\"invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-1 rounded bg-slate-800 text-white text-xs whitespace-nowrap z-10\" style=\"pointer-events:none;\">${playTooltip}</span>
               </span>`;
       // Add a span with a unique id for dynamic update, monospace and min-width for stable layout
-      return `<tr id=\"${rowId}\" class=\"border-b border-slate-200\">
-        <td class=\"p-2 font-mono\">${a.agent_id}</td>
-        <td class=\"p-2 font-mono\">${a.url}</td>
-        <td class=\"p-2\">${labels || "-"}</td>
-        <td class=\"p-2\">${status}</td>
-        <td class=\"p-2 text-slate-500\"><span id=\"agent-hb-${a.agent_id}\">${fmtDate(a.last_heartbeat, TZ)} · ${fmtAgo(a.last_heartbeat)}</span></td>
-        <td class=\"p-2\">${counts[a.agent_id] ?? 0}</td>
-        <td class=\"p-2\">${testJobBtn} ${deregBtn}</td>
-      </tr>`;
+    return `<tr id="${rowId}" class="border-b border-slate-200">
+      <td class="p-2 font-mono">${a.agent_id}</td>
+      <td class="p-2 font-mono">${a.url}</td>
+      <td class="p-2">${labels || "-"}</td>
+      <td class="p-2">${status}</td>
+      <td class="p-2">
+        <span style="display:inline-flex;align-items:center;gap:0.5em;">
+          <span style="display:inline-block;width:0.75em;height:0.75em;border-radius:50%;background:${availability === 'Active' ? '#22c55e' : '#ef4444'};"></span>
+          <span>${availability}</span>
+        </span>
+      </td>
+      <td class="p-2 text-slate-500"><span id="agent-hb-${a.agent_id}">${fmtDate(a.last_heartbeat, TZ)} · ${fmtAgo(a.last_heartbeat)}</span></td>
+      <td class="p-2">${counts[a.agent_id] ?? 0}</td>
+      <td class="p-2">${testJobBtn} ${deregBtn}</td>
+    </tr>`;
   }).join("");
 
   // Set up dynamic update for Heartbeat column (only for visible agents)
