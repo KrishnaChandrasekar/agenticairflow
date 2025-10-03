@@ -20,7 +20,8 @@
     <header class="flex items-center justify-between">
       <h1 class="text-2xl font-semibold ml-4" style="color:#143d6b;">Agent Router Monitoring Console</h1>
       <div class="flex items-center gap-3">
-        <!-- Global styled Timezone dropdown (only one in the app) -->
+  <!-- Timezone icon and dropdown -->
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="18" height="18" style="vertical-align:middle;margin-right:-2px;" class="text-slate-500"><circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="2" fill="none"/><path d="M10 5v5l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
         <div class="relative" id="tz-wrap">
           <button id="tz-btn" class="border rounded px-3 py-1 flex items-center gap-2">
             <span id="tz-label">Timezone</span>
@@ -47,51 +48,60 @@
             <button id="tab-agents" class="tab-btn">Agents</button>
             <button id="tab-analytics" class="tab-btn">Analytics</button>
           </div>
-          <!-- Shared Time Range Filter (Kibana style) -->
-          <div class="relative" id="tr-wrap-shared">
-            <button id="tr-btn-shared" class="border rounded px-3 py-1 flex items-center gap-2">
-              <span id="tr-label-shared">Last 24 hours</span>
-              <span class="text-xs">▼</span>
-            </button>
-            <div id="tr-pop-shared"
-              class="hidden absolute right-0 z-50 mt-1 w-[28rem] bg-white border rounded shadow p-3 space-y-3">
-              <div class="text-sm">
-                <div class="font-medium mb-1">Time field</div>
-                <label class="mr-2"><input type="radio" name="tr-field-shared" value="updated_at" checked>
-                  Updated</label>
-                <label><input type="radio" name="tr-field-shared" value="created_at"> Created</label>
-              </div>
-              <div class="text-sm">
-                <div class="font-medium mb-1">Quick ranges</div>
-                <div class="flex flex-wrap gap-2">
-                  <button class="tr-q-shared border rounded px-2 py-1" data-mins="15">Last 15m</button>
-                  <button class="tr-q-shared border rounded px-2 py-1" data-mins="60">Last 1h</button>
-                  <button class="tr-q-shared border rounded px-2 py-1" data-mins="240">Last 4h</button>
-                  <button class="tr-q-shared border rounded px-2 py-1" data-mins="1440">Last 24h</button>
-                  <button class="tr-q-shared border rounded px-2 py-1" data-mins="10080">Last 7d</button>
-                  <button class="tr-q-shared border rounded px-2 py-1" data-mins="43200">Last 30d</button>
-                  <button class="tr-q-shared border rounded px-2 py-1" data-today="1">Today</button>
-                  <button class="tr-q-shared border rounded px-2 py-1" data-yesterday="1">Yesterday</button>
+          <!-- Controls row: Filter, Auto/Manual Refresh, Time Filter -->
+          <div class="flex items-center gap-3">
+            <input id="job-filter" class="border rounded px-2 py-1" placeholder="Filter: job/agent/status" style="display:none;" />
+            <label class="text-sm flex items-center gap-1">
+              <input id="autorefresh" type="checkbox" class="accent-blue-600" checked /> Auto
+              <button id="manual-refresh" class="ml-2 px-2 py-1 border rounded bg-slate-200" title="Refresh now">
+                <span id="refresh-icon">🔄</span>
+              </button>
+            </label>
+            <div class="relative" id="tr-wrap-shared">
+              <button id="tr-btn-shared" class="border rounded px-3 py-1 flex items-center gap-2">
+                <span id="tr-label-shared">Last 24 hours</span>
+                <span class="text-xs">▼</span>
+              </button>
+              <div id="tr-pop-shared"
+                class="hidden absolute right-0 z-50 mt-1 w-[28rem] bg-white border rounded shadow p-3 space-y-3">
+                <div class="text-sm">
+                  <div class="font-medium mb-1">Time field</div>
+                  <label class="mr-2"><input type="radio" name="tr-field-shared" value="updated_at" checked>
+                    Updated</label>
+                  <label><input type="radio" name="tr-field-shared" value="created_at"> Created</label>
                 </div>
-              </div>
-              <div class="text-sm">
-                <div class="font-medium mb-1">Absolute range</div>
-                <div class="grid grid-cols-2 gap-2">
-                  <div>
-                    <div class="text-xs text-slate-500 mb-1">From</div>
-                    <input id="tr-from-shared" type="datetime-local" class="border rounded px-2 py-1 w-full">
-                  </div>
-                  <div>
-                    <div class="text-xs text-slate-500 mb-1">To</div>
-                    <input id="tr-to-shared" type="datetime-local" class="border rounded px-2 py-1 w-full">
+                <div class="text-sm">
+                  <div class="font-medium mb-1">Quick ranges</div>
+                  <div class="flex flex-wrap gap-2">
+                    <button class="tr-q-shared border rounded px-2 py-1" data-mins="15">Last 15m</button>
+                    <button class="tr-q-shared border rounded px-2 py-1" data-mins="60">Last 1h</button>
+                    <button class="tr-q-shared border rounded px-2 py-1" data-mins="240">Last 4h</button>
+                    <button class="tr-q-shared border rounded px-2 py-1" data-mins="1440">Last 24h</button>
+                    <button class="tr-q-shared border rounded px-2 py-1" data-mins="10080">Last 7d</button>
+                    <button class="tr-q-shared border rounded px-2 py-1" data-mins="43200">Last 30d</button>
+                    <button class="tr-q-shared border rounded px-2 py-1" data-today="1">Today</button>
+                    <button class="tr-q-shared border rounded px-2 py-1" data-yesterday="1">Yesterday</button>
                   </div>
                 </div>
-              </div>
-              <div class="flex items-center justify-between">
-                <button id="tr-clear-shared" class="text-xs border rounded px-2 py-1">Clear</button>
-                <div class="flex items-center gap-2">
-                  <button id="tr-cancel-shared" class="border rounded px-3 py-1">Cancel</button>
-                  <button id="tr-apply-shared" class="bg-blue-600 text-white rounded px-3 py-1">Apply</button>
+                <div class="text-sm">
+                  <div class="font-medium mb-1">Absolute range</div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <div class="text-xs text-slate-500 mb-1">From</div>
+                      <input id="tr-from-shared" type="datetime-local" class="border rounded px-2 py-1 w-full">
+                    </div>
+                    <div>
+                      <div class="text-xs text-slate-500 mb-1">To</div>
+                      <input id="tr-to-shared" type="datetime-local" class="border rounded px-2 py-1 w-full">
+                    </div>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between">
+                  <button id="tr-clear-shared" class="text-xs border rounded px-2 py-1">Clear</button>
+                  <div class="flex items-center gap-2">
+                    <button id="tr-cancel-shared" class="border rounded px-3 py-1">Cancel</button>
+                    <button id="tr-apply-shared" class="bg-blue-600 text-white rounded px-3 py-1">Apply</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -99,20 +109,7 @@
         </div>
         <div id="tab-content-jobs">
           <div class="flex flex-col gap-2 mb-2">
-            <div class="flex items-center justify-between">
-              <h2 class="font-semibold">Jobs</h2>
-              <div class="flex items-center gap-3">
-                <input id="job-filter" class="border rounded px-2 py-1" placeholder="Filter: job/agent/status" />
-
-
-                <label class="text-sm flex items-center gap-1">
-                  <input id="autorefresh" type="checkbox" class="accent-blue-600" checked /> Auto
-                  <button id="manual-refresh" class="ml-2 px-2 py-1 border rounded bg-slate-200" title="Refresh now">
-                    <span id="refresh-icon">🔄</span>
-                  </button>
-                </label>
-              </div>
-            </div>
+            <!-- Controls moved to tab header -->
             <!-- Pagination -->
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
@@ -170,10 +167,8 @@
                   <th class="p-2"><input id="f-agent_id" class="border rounded px-2 py-1 w-full"
                       placeholder="Filter agent" /></th>
                   <th class="p-2"><input id="f-rc" class="border rounded px-2 py-1 w-full" placeholder="e.g. 0" /></th>
-                  <th class="p-2"><input id="f-created_at" class="border rounded px-2 py-1 w-full"
-                      placeholder="Filter date/time" /></th>
-                  <th class="p-2"><input id="f-updated_at" class="border rounded px-2 py-1 w-full"
-                      placeholder="Filter date/time" /></th>
+          <th class="p-2"></th>
+          <th class="p-2"></th>
                   <th class="p-2"><input id="f-labels" class="border rounded px-2 py-1 w-full"
                       placeholder='key or "k:v"' /></th>
                   <th class="p-2"><button id="f-clear-all" class="text-xs border rounded px-2 py-1">Clear all</button>
@@ -187,8 +182,7 @@
         </div>
         <div id="tab-content-agents" style="display:none">
           <div class="flex justify-between items-center mb-2">
-            <h3 class="text-lg font-semibold">Agent Explorer</h3>
-            <span id="agent-count" class="text-sm text-slate-500"></span>
+
           </div>
           <div id="agents-banner" class="hidden mb-2 px-3 py-2 rounded text-sm"></div>
           <!-- Pagination controls for Agents tab -->
@@ -211,6 +205,7 @@
               </div>
             </div>
           </div>
+          <div id="agents-chips" class="flex flex-wrap gap-2 mb-2"></div>
           <div class="overflow-auto" style="max-height: 70vh">
             <table class="w-full text-sm" id="agents-table">
               <thead class="sticky top-0 bg-slate-100">
@@ -220,9 +215,9 @@
                   <th class="text-left p-2 cursor-pointer" data-sort="url">URL <span class="text-xs"
                       id="sort-url-agents"></span></th>
                   <th class="text-left p-2">Labels</th>
-                  <th class="text-left p-2 cursor-pointer" data-sort="status">Status <span class="text-xs"
-                      id="sort-status-agents"></span></th>
-                  <th class="text-left p-2 cursor-pointer" data-sort="last_heartbeat">Last Heart Beat <span
+          <th class="text-left p-2 cursor-pointer" data-sort="status">Status <span class="text-xs" id="sort-status-agents"></span></th>
+          <th class="text-left p-2">Availability</th>
+                  <th class="text-left p-2 cursor-pointer" data-sort="last_heartbeat">Last Heartbeat <span
                       class="text-xs" id="sort-last_heartbeat-agents"></span></th>
                   <th class="text-left p-2 cursor-pointer" id="agents-jobs-col-title" data-sort="jobs_in_range">Jobs (in
                     range) <span class="text-xs" id="sort-jobs_in_range-agents"></span></th>
@@ -240,11 +235,16 @@
                       <option value=""></option>
                       <option>Registered</option>
                       <option>Discovered</option>
-                      <option>Offline</option>
                     </select>
                   </th>
-                  <th class="p-2"><input id="f-last_heartbeat-agents" class="border rounded px-2 py-1 w-full"
-                      placeholder="Filter date/time" /></th>
+                  <th class="p-2">
+                    <select id="f-availability-agents" class="border rounded px-2 py-1 w-full">
+                      <option value=""></option>
+                      <option>Active</option>
+                      <option>Inactive</option>
+                    </select>
+                  </th>
+          <th class="p-2"></th>
                   <th class="p-2"></th>
                   <th class="p-2"><button id="f-clear-all-agents" class="text-xs border rounded px-2 py-1">Clear
                       all</button></th>
@@ -255,15 +255,6 @@
           </div>
         </div>
         <div id="tab-content-analytics" style="display:none; min-height:400px;">
-          <div class="flex flex-row justify-end mb-1">
-            <label class="text-sm flex items-center gap-1" style="align-items:center;">
-              <input type="checkbox" id="analytics-auto-refresh" checked style="vertical-align: middle;" />
-              Auto
-              <button id="analytics-manual-refresh" class="ml-2 px-2 py-1 border rounded bg-slate-200" title="Refresh now">
-                <span id="analytics-refresh-icon">🔄</span>
-              </button>
-            </label>
-          </div>
           <div class="flex flex-row items-stretch gap-6 mb-1">
             <div class="analytics-gauge-box analytics-gauge-dual" style="min-width:320px;">
               <span class="analytics-gauge-title">Total Jobs &amp; Success Rate</span>
@@ -325,7 +316,11 @@
           <h4 class="font-semibold">Logs</h4>
           <div class="flex items-center gap-2">
             <button id="drawer-log-copy" class="log-copy-btn" title="Copy logs">
-              <span style="font-size: 1.3em;">📋</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="display:inline-block;vertical-align:middle;">
+                <rect x="7" y="4" width="10" height="16" rx="2" fill="#fff" stroke="#64748b" stroke-width="1.5"/>
+                <rect x="9" y="2" width="6" height="4" rx="1" fill="#e0e7ef" stroke="#64748b" stroke-width="1.2"/>
+                <path d="M9 8h6" stroke="#64748b" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
             </button>
             <label class="text-xs flex items-center gap-1">
               <input id="log-autorefresh" type="checkbox" class="accent-blue-600" checked /> Follow

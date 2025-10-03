@@ -773,7 +773,11 @@ let prevJobTypeDonut = null;
       .style("text-anchor", "end");
     svg.append("g")
       .attr("transform", `translate(${margin.left},0)`)
-      .call(d3.axisLeft(y));
+      .call(
+        d3.axisLeft(y)
+          .ticks(Math.ceil(y.domain()[1]))
+          .tickFormat(d => Number.isInteger(d) ? d : "")
+      );
     const barGroups = svg.selectAll(".serie")
       .data(stacked)
       .join("g")
@@ -815,8 +819,8 @@ let prevJobTypeDonut = null;
           `<div style='color:${color("Airflow Job")};'>Airflow Job: ${d["Airflow Job"] || 0}</div>`
         )
         .style("display", "block")
-        .style("left", (event.offsetX + 30) + "px")
-        .style("top", (event.offsetY + 10) + "px");
+        .style("left", (event.clientX + 18) + "px")
+        .style("top", (event.clientY + 10) + "px");
       })
       .on("mouseleave", function() {
         svg.selectAll(".bar-rect").attr("opacity", 1);
@@ -912,12 +916,23 @@ let prevJobTypeDonut = null;
   svg.appendChild(text);
   }
 
-  window.renderAnalyticsChart = function(jobs) {
-    renderStackedBarChart(jobs || [], {binMinutes: 60});
-    renderDualGauge(jobs || []);
-    renderJobsHeatmap(jobs || []);
-    renderJobTypeDonut(jobs || []);
-    renderTestJobStatusDonut(jobs || []);
-    renderAirflowJobStatusDonut(jobs || []);
+  window.renderAnalyticsChart = function(jobs, opts = {}) {
+    // If opts.animate is true, reset previous data so all charts animate
+    if (opts.animate) {
+      prevDualGauge = null;
+      prevJobsHeatmap = null;
+      prevAirflowDonut = null;
+      prevTestDonut = null;
+      prevJobTypeDonut = null;
+      prevStackedBarData = null;
+    }
+    // Apply time filter to all charts
+    let filteredJobs = (typeof window.filterJobsByTime === 'function') ? window.filterJobsByTime(jobs || []) : (jobs || []);
+    renderStackedBarChart(filteredJobs, {binMinutes: 60});
+    renderDualGauge(filteredJobs);
+    renderJobsHeatmap(filteredJobs);
+    renderJobTypeDonut(filteredJobs);
+    renderTestJobStatusDonut(filteredJobs);
+    renderAirflowJobStatusDonut(filteredJobs);
   };
 })();

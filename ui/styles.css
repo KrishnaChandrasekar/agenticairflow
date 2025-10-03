@@ -260,23 +260,44 @@
 }
 /* Clipboard copy button for logs */
 .log-copy-btn {
-    background: none;
-    border: none;
+    background: #f1f5f9;
+    border: 1.5px solid #cbd5e1;
     cursor: pointer;
-    padding: 2px;
-    border-radius: 4px;
-    transition: background 0.2s;
+    padding: 4px 7px;
+    border-radius: 6px;
+    transition: background 0.2s, border 0.2s, box-shadow 0.2s;
     display: flex;
     align-items: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    outline: none;
+    position: relative;
 }
-.log-copy-btn span {
-    transition: color 0.2s;
+
+/* Log display area: add subtle border for depth */
+#drawer-log {
+    border: 1px solid #e5e7eb; /* Tailwind slate-200 */
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    background: #f8fafc;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
-.log-copy-btn:hover span {
-    color: #4caf50;
+/* SVG icon color on hover */
+.log-copy-btn svg {
+    transition: color 0.2s, stroke 0.2s;
+}
+.log-copy-btn:hover,
+.log-copy-btn:focus {
+    background: #e0f2fe;
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 2px #38bdf855;
+}
+.log-copy-btn:hover svg,
+.log-copy-btn:focus svg {
+    stroke: #0ea5e9;
 }
 .log-copy-btn.copied {
     background: #e0f7e9;
+    border-color: #22c55e;
 }
 /* Highlight effect for all clickable buttons */
 button:hover, .hover\:bg-slate-100:hover {

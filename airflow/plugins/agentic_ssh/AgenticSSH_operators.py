@@ -27,7 +27,8 @@ def _read_conn(conn_id: str):
         raise AirflowException(f"{conn_id}: missing base_url/host")
     return base_url, token, default_labels
 
-class AgenticSSHOperator(BaseOperator):
+
+class AgenticRunOperator(BaseOperator):
     template_fields = ("command", "cwd", "run_as", "agent_id", "route_labels")
 
     def __init__(
