@@ -926,11 +926,13 @@ let prevJobTypeDonut = null;
       prevJobTypeDonut = null;
       prevStackedBarData = null;
     }
-    renderStackedBarChart(jobs || [], {binMinutes: 60});
-    renderDualGauge(jobs || []);
-    renderJobsHeatmap(jobs || []);
-    renderJobTypeDonut(jobs || []);
-    renderTestJobStatusDonut(jobs || []);
-    renderAirflowJobStatusDonut(jobs || []);
+    // Apply time filter to all charts
+    let filteredJobs = (typeof window.filterJobsByTime === 'function') ? window.filterJobsByTime(jobs || []) : (jobs || []);
+    renderStackedBarChart(filteredJobs, {binMinutes: 60});
+    renderDualGauge(filteredJobs);
+    renderJobsHeatmap(filteredJobs);
+    renderJobTypeDonut(filteredJobs);
+    renderTestJobStatusDonut(filteredJobs);
+    renderAirflowJobStatusDonut(filteredJobs);
   };
 })();

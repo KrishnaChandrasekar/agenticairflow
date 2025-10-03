@@ -634,7 +634,7 @@ function applyAgentsFilters(list) {
       let status = "Registered";
       let lastHbMs = toTs(a.last_heartbeat);
       let nowMs = Date.now();
-      const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000;
+  const OFFLINE_THRESHOLD_MS = 20 * 1000; // 20 seconds for faster status reflection
       if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
         if (a.active) status = "Registered";
         else status = "Registered";
@@ -656,7 +656,7 @@ function applyAgentsFilters(list) {
       let availability = "Inactive";
       let lastHbMs = toTs(a.last_heartbeat);
       let nowMs = Date.now();
-      const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000;
+  const OFFLINE_THRESHOLD_MS = 20 * 1000; // 20 seconds for faster status reflection
       if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
         if (a.active) availability = "Active";
         else availability = "Inactive";
@@ -710,7 +710,7 @@ async function renderAgentsDetailTab(){
         counts[a.agent_id] = 0;
       }
   }));
-  const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+  const OFFLINE_THRESHOLD_MS = 20 * 1000; // 20 seconds for faster status reflection
   // Apply filters and pagination to agents list
   const filteredAgents = applyAgentsFilters(state.agents || []);
   renderAgentsFilterChips();

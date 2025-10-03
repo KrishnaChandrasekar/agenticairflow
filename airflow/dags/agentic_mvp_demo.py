@@ -13,7 +13,7 @@ with DAG(
     vm1_ok = AgenticRunOperator(
         task_id="vm1_ok",
         agent_id="vm1",
-        command="echo 'vm1 starting'; for i in 1 2 3 4 5; do echo tick:$i; sleep 2; done; echo 'vm1 done'",
+        command="echo 'vm1 starting'; for i in 1 2 3 4 5; do echo tick:$i; sleep 20; done; echo 'vm1 done'",
         cwd="/",
     )
     go_vm1_ok = AgenticRunOperator(
