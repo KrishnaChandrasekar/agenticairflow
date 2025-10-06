@@ -5,6 +5,21 @@
 
 This MVP brings up **Airflow 2.10.5** (CeleryExecutor), the **Agent Router**, and one or more **Agent VMs** on a single Docker network. The Airflow plugin and demo DAG are pre-mounted for rapid experimentation.
 
+## 📋 Table of Contents
+
+- [0. Installation & Setup](#0-installation--setup)
+- [1. Quickstart (Standard Build)](#1-quickstart-standard-build)
+- [2. Health Checks](#2-health-checks)
+- [3. Airflow UI & Demo DAG](#3-airflow-ui--demo-dag)
+- [4. What You'll See](#4-what-youll-see)
+- [5. Clean Build & Cache Management](#5-clean-build--cache-management)
+- [6. System Shutdown & Cleanup](#6-system-shutdown--cleanup)
+- [7. Router UI](#7-router-ui)
+- **[8. Label-Based Job Routing](#8-label-based-job-routing) 🏷️ ← Comprehensive guide with 8+ scenarios**
+- [9. Customization](#9-customization)
+
+> **🚀 Quick Start for Advanced Users:** Jump to [Label-Based Job Routing](#8-label-based-job-routing) for intelligent job targeting using environment zones, capabilities, and custom attributes with complete API, UI, and Airflow examples.
+
 ## 0. Installation & Setup
 
 ### Prerequisites
@@ -37,6 +52,8 @@ curl http://localhost:8000/health      # Router health -> {"ok": true}
 curl http://localhost:8001/health      # Agent info
 ```
 
+> **🏷️ Advanced Job Routing:** For comprehensive examples on using labels to route jobs to specific agents based on environment, capabilities, or custom attributes, see [**Section 8: Label-Based Job Routing**](#8-label-based-job-routing) with detailed scenarios, API examples, and best practices.
+
 
 ## 3. Airflow UI & Demo DAG
 
@@ -56,6 +73,8 @@ The plugin uses this to submit jobs to the Router and poll status.
 **Note:** The Airflow operator previously named `AgenticSSHOperator` is now called `AgenticRunOperator`. It does not use SSH, but instead runs commands or scripts on the targeted OS via the Agentic Router and Agents. Update your DAGs and plugins to use `AgenticRunOperator` for all job execution tasks.
 
 **Ecosystem Note:** This system supports both Python-based agents and Go-based agents. You can run agents implemented in either language, and they will interoperate seamlessly within the same Agentic Router and Airflow environment.
+
+> **🎯 Advanced Routing:** For intelligent job targeting using labels (environment zones, capabilities, regions), see the complete [Label-Based Job Routing Guide](#8-label-based-job-routing) with Airflow DAG examples.
 
 
 ## 4. What You'll See
@@ -222,6 +241,14 @@ The UI provides:
 - **Professional design** with modern typography and responsive layout
 
 ## 8. Label-Based Job Routing
+
+> **📚 Complete Guide:** This section provides comprehensive documentation for advanced job routing using labels. Jump to specific topics:
+> - [Label System Overview](#label-system-overview) - Core concepts and architecture
+> - [Usage Scenarios](#label-usage-scenarios) - 8 detailed examples with curl commands
+> - [UI Integration](#using-labels-via-ui) - Step-by-step web interface guide  
+> - [Airflow Integration](#airflow-dag-integration) - DAG examples with AgenticRunOperator
+> - [Quick Reference](#quick-reference) - Scenario lookup table
+> - [Troubleshooting](#troubleshooting-labels) - Debug commands and solutions
 
 The Agentic system provides sophisticated label-based job routing to target specific agents based on their capabilities, environment, or custom attributes.
 
