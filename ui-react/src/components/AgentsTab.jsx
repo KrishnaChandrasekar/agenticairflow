@@ -496,7 +496,7 @@ const AgentsTab = ({
       </div>
 
       {/* Agents table */}
-      <div className="overflow-auto border border-gray-200 rounded-xl shadow-sm bg-white" style={{ maxHeight: 'calc(15 * var(--row-h, 40px) + 130px)' }}>
+      <div className="overflow-auto border border-gray-200 rounded-xl shadow-sm bg-white h-full" style={{ maxHeight: 'calc(100vh - 16rem)', minHeight: '400px' }}>
         <table className="w-full table-cell-text" style={{ minWidth: '1400px' }}>
           <thead className="sticky top-0 z-10">
             {/* Header row */}
@@ -699,7 +699,7 @@ const AgentsTab = ({
             </tr>
           </thead>
 
-          <tbody>
+          <tbody className="h-full">
             {paginatedAgents.agents.length === 0 ? (
               <tr>
                 <td className="p-8 text-center" colSpan="8">
@@ -790,8 +790,8 @@ const AgentRow = ({
       </td>
       <td className="p-4 text-secondary">
         <div className="flex flex-col gap-1">
-          <span className="text-body font-medium">{fmtDate(agent.last_heartbeat, timezone)}</span>
-          <span className="text-body-small text-tertiary">{fmtAgo(agent.last_heartbeat)}</span>
+          <span className="text-body-large font-medium">{fmtDate(agent.last_heartbeat, timezone)}</span>
+          <span className="text-body text-tertiary">{fmtAgo(agent.last_heartbeat)}</span>
         </div>
       </td>
       <td className="p-4">

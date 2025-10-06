@@ -84,7 +84,7 @@ function App() {
         )}
 
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="lg:col-span-2 bg-white rounded-2xl shadow p-4">
+          <div className="lg:col-span-2 bg-white rounded-2xl shadow p-4 min-h-[calc(100vh-8rem)] h-fit">
             <TabNavigation
               activeTab={activeTab}
               onTabChange={setActiveTab}

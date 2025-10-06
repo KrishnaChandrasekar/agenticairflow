@@ -302,7 +302,7 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
       </div>
 
       {/* Jobs table */}
-      <div className="overflow-auto border border-gray-200 rounded-xl shadow-sm bg-white" style={{ maxHeight: 'calc(15 * var(--row-h, 40px) + 130px)' }}>
+      <div className="overflow-auto border border-gray-200 rounded-xl shadow-sm bg-white h-full" style={{ maxHeight: 'calc(100vh - 16rem)', minHeight: '400px' }}>
         <table className="w-full table-cell-text" style={{ minWidth: '1400px' }}>
           <thead className="sticky top-0 z-10">
             {/* Header row */}
@@ -530,7 +530,7 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
             </tr>
           </thead>
 
-          <tbody>
+          <tbody className="h-full">
             {paginatedJobs.jobs.length === 0 ? (
               <tr>
                 <td className="p-8 text-center" colSpan="8">
@@ -593,14 +593,14 @@ const JobRow = ({ job, timezone, onJobClick }) => {
       <td className="p-4 text-center table-cell-text font-medium group-hover:text-slate-900">{job.rc ?? "-"}</td>
       <td className="p-4 text-secondary">
         <div className="flex flex-col gap-1">
-          <span className="text-body font-medium">{fmtDate(job.created_at, timezone)}</span>
-          <span className="text-body-small text-tertiary">{fmtAgo(job.created_at)}</span>
+          <span className="text-body-large font-medium">{fmtDate(job.created_at, timezone)}</span>
+          <span className="text-body text-tertiary">{fmtAgo(job.created_at)}</span>
         </div>
       </td>
       <td className="p-4 text-secondary">
         <div className="flex flex-col gap-1">
-          <span className="text-body font-medium">{fmtDate(job.updated_at, timezone)}</span>
-          <span className="text-body-small text-tertiary">{fmtAgo(job.updated_at)}</span>
+          <span className="text-body-large font-medium">{fmtDate(job.updated_at, timezone)}</span>
+          <span className="text-body text-tertiary">{fmtAgo(job.updated_at)}</span>
         </div>
       </td>
       <td className="p-4">
@@ -611,8 +611,8 @@ const JobRow = ({ job, timezone, onJobClick }) => {
                 key={key} 
                 className="inline-flex items-center px-2 py-1 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md status-text text-blue-800 shadow-sm"
               >
-                <span className="text-blue-600">{key}:</span>
-                <span className="ml-1 font-semibold">{value}</span>
+                <span className="text-blue-600 font-bold">{key.replace(/_/g, '-').toUpperCase()}:</span>
+                <span className="ml-1 font-bold">{value.toUpperCase()}</span>
               </span>
             ))
           ) : (

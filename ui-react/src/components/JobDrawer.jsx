@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 import { fetchJSON, API_BASE, fmtDate, fmtAgo, getAuthHeaders } from '../utils/api';
 
-const JobDrawer = ({ jobId, jobs, timezone, onClose }) => {
+const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
   const [jobDetails, setJobDetails] = useState(null);
   const [logs, setLogs] = useState('');
   const [autoFollow, setAutoFollow] = useState(true);
@@ -27,9 +27,13 @@ const JobDrawer = ({ jobId, jobs, timezone, onClose }) => {
   useEffect(() => {
     if (!jobId) return;
 
-    const fetchJobData = async () => {
+    const fetchJobData = async (isInitialLoad = false) => {
       try {
-        setLoading(true);
+        // Only show loading on initial load, not on refreshes
+        if (isInitialLoad) {
+          setLoading(true);
+        }
+        
         const [statusResp, logsResp] = await Promise.all([
           fetchJSON(`${API_BASE}/status/${jobId}`),
           fetch(`${API_BASE}/logs/${jobId}`, { headers: getAuthHeaders() })
@@ -37,25 +41,44 @@ const JobDrawer = ({ jobId, jobs, timezone, onClose }) => {
         
         const logsText = await logsResp.text();
         
-        setJobDetails(statusResp);
-        setLogs(logsText);
+        // Only update state if data has actually changed to prevent flickering
+        setJobDetails(prevDetails => {
+          const newDetails = statusResp;
+          // Deep comparison to avoid unnecessary updates
+          if (JSON.stringify(prevDetails) !== JSON.stringify(newDetails)) {
+            return newDetails;
+          }
+          return prevDetails;
+        });
         
-        // Auto-scroll to bottom
-        if (logRef.current) {
-          logRef.current.scrollTop = logRef.current.scrollHeight;
-        }
+        setLogs(prevLogs => {
+          if (prevLogs !== logsText) {
+            // Auto-scroll to bottom only when logs actually change
+            setTimeout(() => {
+              if (logRef.current) {
+                logRef.current.scrollTop = logRef.current.scrollHeight;
+              }
+            }, 0);
+            return logsText;
+          }
+          return prevLogs;
+        });
+        
       } catch (err) {
         console.error('Failed to fetch job data:', err);
       } finally {
-        setLoading(false);
+        if (isInitialLoad) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchJobData();
+    // Initial load with loading indicator
+    fetchJobData(true);
 
-    // Set up auto-refresh for logs
+    // Set up auto-refresh for logs (without loading indicator)
     if (autoFollow) {
-      intervalRef.current = setInterval(fetchJobData, 2000);
+      intervalRef.current = setInterval(() => fetchJobData(false), 2000);
     }
 
     return () => {
@@ -74,7 +97,10 @@ const JobDrawer = ({ jobId, jobs, timezone, onClose }) => {
     }
   };
 
-  const combinedJob = { ...job, ...jobDetails };
+  // Memoize combined job data to prevent flickering
+  const combinedJob = React.useMemo(() => {
+    return { ...job, ...jobDetails };
+  }, [job, jobDetails]);
 
   if (!jobId) return null;
 
@@ -154,11 +180,11 @@ const JobDrawer = ({ jobId, jobs, timezone, onClose }) => {
                     </div>
                     <div>
                       <span className="form-label text-body-large font-semibold">Created:</span>
-                      <div className="text-secondary text-body mt-1">{fmtDate(combinedJob.created_at, timezone)} · {fmtAgo(combinedJob.created_at)}</div>
+                      <div className="text-secondary text-body-large mt-1">{fmtDate(combinedJob.created_at, timezone)} · {fmtAgo(combinedJob.created_at)}</div>
                     </div>
                     <div>
                       <span className="form-label text-body-large font-semibold">Updated:</span>
-                      <div className="text-secondary text-body mt-1">{fmtDate(combinedJob.updated_at, timezone)} · {fmtAgo(combinedJob.updated_at)}</div>
+                      <div className="text-secondary text-body-large mt-1">{fmtDate(combinedJob.updated_at, timezone)} · {fmtAgo(combinedJob.updated_at)}</div>
                     </div>
                     <div>
                       <span className="form-label text-body-large font-semibold">Labels:</span>
@@ -166,10 +192,10 @@ const JobDrawer = ({ jobId, jobs, timezone, onClose }) => {
                         {Object.entries(combinedJob.labels || {}).map(([k, v]) => (
                           <span 
                             key={k} 
-                            className="inline-flex items-center px-2 py-1 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-md text-body text-emerald-800 shadow-sm"
+                            className="inline-flex items-center px-2 py-1 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md text-body text-blue-800 shadow-sm"
                           >
-                            <span className="text-emerald-600">{k}:</span>
-                            <span className="ml-1 font-semibold">{v}</span>
+                            <span className="text-blue-600 font-bold">{k.replace(/_/g, '-').toUpperCase()}:</span>
+                            <span className="ml-1 font-bold">{v.toUpperCase()}</span>
                           </span>
                         ))}
                         {Object.keys(combinedJob.labels || {}).length === 0 && (
@@ -186,49 +212,241 @@ const JobDrawer = ({ jobId, jobs, timezone, onClose }) => {
               )}
             </div>
 
-            {/* Right Column - Logs */}
-            <div className="flex-1 flex flex-col">
-              <div className="flex justify-between items-center mb-3">
-                <h4 className="text-heading-2 text-primary flex items-center gap-2">
-                  <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Logs
-                </h4>
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={handleCopyLogs}
-                    className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 text-gray-700 text-body-large font-semibold rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
-                    title="Copy logs"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                    Copy
-                  </button>
-                  <label className="text-body-large flex items-center gap-2 text-gray-700">
-                    <input 
-                      type="checkbox" 
-                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2" 
-                      checked={autoFollow}
-                      onChange={(e) => setAutoFollow(e.target.checked)}
-                    /> 
-                    Auto-follow
-                  </label>
+            {/* Right Column - Pipeline + Logs */}
+            <div className="flex-1 flex flex-col space-y-4">
+              {/* Job Execution Pipeline */}
+              {combinedJob && (
+                <div className="bg-gradient-to-br from-slate-50 to-blue-50 border border-slate-200 rounded-xl p-6 shadow-lg">
+                  <div className="text-center mb-4">
+                    <h3 className="text-sm font-bold text-slate-700 tracking-wide">JOB EXECUTION PIPELINE</h3>
+                  </div>
+                  <div className="flex items-center justify-center space-x-8">
+                    {/* SUBMITTED Stage */}
+                    <div className="flex flex-col items-center relative">
+                      <div className={`relative w-12 h-12 rounded-full flex items-center justify-center transition-all duration-500 transform ${
+                        combinedJob.status === 'SUBMITTED' 
+                          ? 'bg-gradient-to-br from-blue-400 to-blue-600 shadow-xl scale-110 animate-pulse' 
+                          : ['RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED'].includes(combinedJob.status) 
+                            ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-lg' 
+                            : 'bg-gradient-to-br from-slate-300 to-slate-400 shadow-md'
+                      }`}>
+                        {combinedJob.status === 'SUBMITTED' && (
+                          <div className="absolute inset-0 rounded-full bg-blue-400 opacity-30 animate-ping"></div>
+                        )}
+                        
+                        {combinedJob.status === 'SUBMITTED' ? (
+                          <div className="relative">
+                            <svg className="w-5 h-5 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          </div>
+                        ) : ['RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED'].includes(combinedJob.status) ? (
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                          </svg>
+                        )}
+                      </div>
+                      <span className={`text-xs mt-3 font-bold tracking-wider ${
+                        combinedJob.status === 'SUBMITTED' ? 'text-blue-700' : 
+                        ['RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED'].includes(combinedJob.status) ? 'text-emerald-700' : 'text-slate-600'
+                      }`}>
+                        SUBMITTED
+                      </span>
+                      {combinedJob.status === 'SUBMITTED' && (
+                        <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Arrow 1 */}
+                    <div className="flex flex-col items-center">
+                      <div className="relative w-12 h-1 bg-slate-300 rounded-full overflow-hidden">
+                        {['RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED'].includes(combinedJob.status) && (
+                          <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full transition-all duration-700 animate-pulse" style={{width: '100%'}}></div>
+                        )}
+                      </div>
+                      <svg className={`w-4 h-4 mt-1 transition-colors duration-500 ${
+                        ['RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED'].includes(combinedJob.status) ? 'text-emerald-500' : 'text-slate-400'
+                      }`} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    
+                    {/* RUNNING Stage */}
+                    <div className="flex flex-col items-center relative">
+                      <div className={`relative w-12 h-12 rounded-full flex items-center justify-center transition-all duration-500 transform ${
+                        combinedJob.status === 'RUNNING' 
+                          ? 'bg-gradient-to-br from-amber-400 to-orange-500 shadow-xl scale-110 animate-pulse' 
+                          : ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(combinedJob.status) 
+                            ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-lg' 
+                            : 'bg-gradient-to-br from-slate-300 to-slate-400 shadow-md'
+                      }`}>
+                        {combinedJob.status === 'RUNNING' && (
+                          <div className="absolute inset-0 rounded-full bg-amber-400 opacity-30 animate-ping"></div>
+                        )}
+                        
+                        {combinedJob.status === 'RUNNING' ? (
+                          <div className="relative">
+                            <svg className="w-5 h-5 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          </div>
+                        ) : ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(combinedJob.status) ? (
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.586a1 1 0 01.707.293l4.828 4.828a1 1 0 01.293.707V17a1 1 0 01-1 1h-1a1 1 0 01-1-1v-1.586a1 1 0 01.293-.707L16.414 13a1 1 0 01.707-.293H19a1 1 0 001-1V9a1 1 0 00-1-1h-1.586a1 1 0 01-.707-.293L12.879 3.879A1 1 0 0012.172 3.586L11 5" />
+                          </svg>
+                        )}
+                      </div>
+                      <span className={`text-xs mt-3 font-bold tracking-wider ${
+                        combinedJob.status === 'RUNNING' ? 'text-amber-700' : 
+                        ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(combinedJob.status) ? 'text-emerald-700' : 'text-slate-600'
+                      }`}>
+                        RUNNING
+                      </span>
+                      {combinedJob.status === 'RUNNING' && (
+                        <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
+                          <div className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Arrow 2 */}
+                    <div className="flex flex-col items-center">
+                      <div className="relative w-12 h-1 bg-slate-300 rounded-full overflow-hidden">
+                        {['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(combinedJob.status) && (
+                          <div className={`absolute top-0 left-0 h-full rounded-full transition-all duration-700 animate-pulse ${
+                            combinedJob.status === 'SUCCEEDED' ? 'bg-gradient-to-r from-emerald-400 to-emerald-600' :
+                            combinedJob.status === 'FAILED' ? 'bg-gradient-to-r from-red-400 to-red-600' :
+                            'bg-gradient-to-r from-orange-400 to-orange-600'
+                          }`} style={{width: '100%'}}></div>
+                        )}
+                      </div>
+                      <svg className={`w-4 h-4 mt-1 transition-colors duration-500 ${
+                        ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(combinedJob.status) ? 
+                          combinedJob.status === 'SUCCEEDED' ? 'text-emerald-500' :
+                          combinedJob.status === 'FAILED' ? 'text-red-500' : 'text-orange-500'
+                        : 'text-slate-400'
+                      }`} fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    
+                    {/* COMPLETED Stage */}
+                    <div className="flex flex-col items-center relative">
+                      <div className={`relative w-12 h-12 rounded-full flex items-center justify-center transition-all duration-500 transform ${
+                        combinedJob.status === 'SUCCEEDED' 
+                          ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-xl scale-110' 
+                        : combinedJob.status === 'FAILED' 
+                          ? 'bg-gradient-to-br from-red-400 to-red-600 shadow-xl scale-110' 
+                        : combinedJob.status === 'CANCELLED' 
+                          ? 'bg-gradient-to-br from-orange-400 to-orange-600 shadow-xl scale-110' 
+                          : 'bg-gradient-to-br from-slate-300 to-slate-400 shadow-md'
+                      }`}>
+                        {combinedJob.status === 'SUCCEEDED' && (
+                          <div className="absolute inset-0 rounded-full bg-emerald-400 opacity-30 animate-ping"></div>
+                        )}
+                        {combinedJob.status === 'FAILED' && (
+                          <div className="absolute inset-0 rounded-full bg-red-400 opacity-30 animate-ping"></div>
+                        )}
+                        {combinedJob.status === 'CANCELLED' && (
+                          <div className="absolute inset-0 rounded-full bg-orange-400 opacity-30 animate-ping"></div>
+                        )}
+                        
+                        {combinedJob.status === 'SUCCEEDED' ? (
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : combinedJob.status === 'FAILED' ? (
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        ) : combinedJob.status === 'CANCELLED' ? (
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" />
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        )}
+                      </div>
+                      <span className={`text-xs mt-3 font-bold tracking-wider ${
+                        combinedJob.status === 'SUCCEEDED' ? 'text-emerald-700' :
+                        combinedJob.status === 'FAILED' ? 'text-red-700' :
+                        combinedJob.status === 'CANCELLED' ? 'text-orange-700' : 'text-slate-600'
+                      }`}>
+                        {combinedJob.status === 'SUCCEEDED' ? 'SUCCEEDED' :
+                         combinedJob.status === 'FAILED' ? 'FAILED' :
+                         combinedJob.status === 'CANCELLED' ? 'CANCELLED' : 'COMPLETED'}
+                      </span>
+                      {['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(combinedJob.status) && (
+                        <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
+                          <div className={`w-2 h-2 rounded-full animate-bounce ${
+                            combinedJob.status === 'SUCCEEDED' ? 'bg-emerald-500' :
+                            combinedJob.status === 'FAILED' ? 'bg-red-500' : 'bg-orange-500'
+                          }`} style={{animationDelay: '0.2s'}}></div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
+              )}
+
+              {/* Logs Section */}
+              <div className="flex-1 flex flex-col">
+                <div className="flex justify-between items-center mb-3">
+                  <h4 className="text-heading-2 text-primary flex items-center gap-2">
+                    <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Logs
+                  </h4>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={handleCopyLogs}
+                      className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 text-gray-700 text-body-large font-semibold rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
+                      title="Copy logs"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      Copy
+                    </button>
+                    <label className="text-body-large flex items-center gap-2 text-gray-700">
+                      <input 
+                        type="checkbox" 
+                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2" 
+                        checked={autoFollow}
+                        onChange={(e) => setAutoFollow(e.target.checked)}
+                      /> 
+                      Auto-follow
+                    </label>
+                  </div>
+                </div>
+                <pre 
+                  ref={logRef}
+                  className="flex-1 p-4 rounded-lg border border-gray-200 overflow-auto text-mono whitespace-pre-wrap break-words font-mono bg-gray-900 text-green-400 shadow-inner"
+                >
+                  {logs || 'No logs available...'}
+                </pre>
               </div>
-              <pre 
-                ref={logRef}
-                className="flex-1 p-4 rounded-lg border border-gray-200 overflow-auto text-mono whitespace-pre-wrap break-words font-mono bg-gray-900 text-green-400 shadow-inner"
-              >
-                {logs || 'No logs available...'}
-              </pre>
             </div>
           </div>
         </div>
       </div>
     </div>
   );
-};
+});
 
 export default JobDrawer;
