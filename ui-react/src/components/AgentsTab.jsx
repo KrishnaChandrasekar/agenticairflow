@@ -1,6 +1,27 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { fmtDate, fmtAgo, includesAll, matchLabels, fetchJSON, API_BASE, toTs, getAuthHeaders } from '../utils/api';
 
+// Helper functions moved outside component to prevent hoisting issues
+const getAgentStatus = (agent, OFFLINE_THRESHOLD_MS) => {
+  const lastHbMs = toTs(agent.last_heartbeat);
+  const nowMs = Date.now();
+  
+  if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
+    return agent.active ? "Registered" : "Discovered";
+  }
+  return "Offline";
+};
+
+const getAgentAvailability = (agent, OFFLINE_THRESHOLD_MS) => {
+  const lastHbMs = toTs(agent.last_heartbeat);
+  const nowMs = Date.now();
+  
+  if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
+    return agent.active ? "Active" : "Inactive";
+  }
+  return "Inactive";
+};
+
 const AgentsTab = ({ 
   agents, 
   jobs, 
@@ -32,43 +53,58 @@ const AgentsTab = ({
   // Calculate job counts for each agent in time range
   useEffect(() => {
     const calculateJobCounts = async () => {
-      const counts = {};
-      await Promise.all(agents.map(async agent => {
-        try {
-          const j = await fetchJSON(`${API_BASE}/jobs?limit=1000&agent_id=${encodeURIComponent(agent.agent_id)}`);
-          const arr = Array.isArray(j) ? j : (j.jobs || []);
-          
-          const filteredJobs = arr.filter(job => {
-            if (!timeRange.enabled) return true;
-            const field = timeRange.field || 'updated_at';
-            const v = job[field];
-            const t = toTs(v);
-            if (isNaN(t)) return false;
+      if (!agents || agents.length === 0) {
+        setJobCounts({});
+        return;
+      }
+
+      try {
+        const counts = {};
+        await Promise.all(agents.map(async agent => {
+          try {
+            const j = await fetchJSON(`${API_BASE}/jobs?limit=1000&agent_id=${encodeURIComponent(agent.agent_id)}`);
+            const arr = Array.isArray(j) ? j : (j.jobs || []);
             
-            if (timeRange.mode === 'relative') {
-              const to = Date.now();
-              const from = to - timeRange.relMins * 60 * 1000;
-              return t >= from && t <= to;
-            } else {
-              const { fromMs, toMs } = timeRange.abs;
-              if (fromMs && t < fromMs) return false;
-              if (toMs && t > toMs) return false;
+            const filteredJobs = arr.filter(job => {
+              if (!timeRange || !timeRange.enabled) return true;
+              const field = timeRange.field || 'updated_at';
+              const v = job[field];
+              const t = toTs(v);
+              if (isNaN(t)) return false;
+              
+              if (timeRange.mode === 'relative') {
+                const to = Date.now();
+                const from = to - (timeRange.relMins || 1440) * 60 * 1000;
+                return t >= from && t <= to;
+              } else if (timeRange.abs) {
+                const { fromMs, toMs } = timeRange.abs;
+                if (fromMs && t < fromMs) return false;
+                if (toMs && t > toMs) return false;
+                return true;
+              }
               return true;
-            }
-          });
-          
-          counts[agent.agent_id] = filteredJobs.length;
-        } catch {
-          counts[agent.agent_id] = 0;
-        }
-      }));
-      setJobCounts(counts);
+            });
+            
+            counts[agent.agent_id] = filteredJobs.length;
+          } catch (error) {
+            console.error(`Error fetching jobs for agent ${agent.agent_id}:`, error);
+            counts[agent.agent_id] = 0;
+          }
+        }));
+        setJobCounts(counts);
+      } catch (error) {
+        console.error('Error calculating job counts:', error);
+        setJobCounts({});
+      }
     };
 
-    if (agents.length > 0) {
+    // Add a small delay to prevent rapid re-execution and add safety check
+    const timeoutId = setTimeout(() => {
       calculateJobCounts();
-    }
-  }, [agents, timeRange]);
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [agents?.length, timeRange?.enabled, timeRange?.mode, timeRange?.relMins]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -86,6 +122,7 @@ const AgentsTab = ({
 
   // Filter and sort agents
   const filteredAgents = useMemo(() => {
+    if (!agents || agents.length === 0) return [];
     let filtered = [...agents];
     
     // Apply filters
@@ -100,13 +137,13 @@ const AgentsTab = ({
     }
     if (filters.status) {
       filtered = filtered.filter(a => {
-        const status = getAgentStatus(a);
+        const status = getAgentStatus(a, OFFLINE_THRESHOLD_MS);
         return status === filters.status;
       });
     }
     if (filters.availability) {
       filtered = filtered.filter(a => {
-        const availability = getAgentAvailability(a);
+        const availability = getAgentAvailability(a, OFFLINE_THRESHOLD_MS);
         return availability === filters.availability;
       });
     }
@@ -176,48 +213,32 @@ const AgentsTab = ({
     return chips;
   }, [filters, timeRange]);
 
-  const removeFilterChip = useCallback((chipKey) => {
+  // Convert useCallback to regular function to prevent circular dependencies
+  const removeFilterChip = (chipKey) => {
     if (chipKey === 'timerange') {
       // Clear time range filter - AgentsTab doesn't have onTimeRangeClear prop, so we skip this
       return;
     }
-    handleFilterChange(chipKey, '');
-  }, [handleFilterChange]);
-
-  const getAgentStatus = (agent) => {
-    const lastHbMs = toTs(agent.last_heartbeat);
-    const nowMs = Date.now();
-    
-    if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
-      return agent.active ? "Registered" : "Discovered";
-    }
-    return "Offline";
+    // Inline handleFilterChange call to avoid circular dependency
+    setFilters(prev => ({ ...prev, [chipKey]: '' }));
+    setPage(1);
   };
 
-  const getAgentAvailability = (agent) => {
-    const lastHbMs = toTs(agent.last_heartbeat);
-    const nowMs = Date.now();
-    
-    if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
-      return agent.active ? "Active" : "Inactive";
-    }
-    return "Inactive";
-  };
-
-  const handleSort = useCallback((key) => {
+  // Convert useCallback to regular functions to prevent circular dependencies
+  const handleSort = (key) => {
     setSort(prev => ({
       key,
       dir: prev.key === key ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'asc'
     }));
     setPage(1);
-  }, []);
+  };
 
-  const handleFilterChange = useCallback((key, value) => {
+  const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPage(1);
-  }, []);
+  };
 
-  const handleClearFilters = useCallback(() => {
+  const handleClearFilters = () => {
     setFilters({
       agent_id: '',
       url: '',
@@ -226,18 +247,18 @@ const AgentsTab = ({
       availability: ''
     });
     setPage(1);
-  }, []);
+  };
 
-  const deregisterAgent = useCallback(async (agentId) => {
+  const deregisterAgent = async (agentId) => {
     setBanner({
       show: true,
       type: 'confirm',
       message: `Deregister agent ${agentId}?`,
       agentId
     });
-  }, []);
+  };
 
-  const confirmDeregister = useCallback(async (agentId) => {
+  const confirmDeregister = async (agentId) => {
     setBanner({ show: true, type: 'loading', message: 'Processing...' });
     
     try {
@@ -270,7 +291,7 @@ const AgentsTab = ({
         message: `Request failed: ${e.message}`
       });
     }
-  }, [refreshAgents]);
+  };
 
   const getSortIndicator = (key) => {
     if (sort.key !== key) return '';
@@ -297,6 +318,15 @@ const AgentsTab = ({
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-secondary text-body">Loading agents...</div>
+      </div>
+    );
+  }
+
+  // Add error boundary for the component
+  if (!agents) {
+    return (
+      <div className="p-6">
+        <div className="text-center text-gray-500">Loading agents...</div>
       </div>
     );
   }
@@ -674,8 +704,8 @@ const AgentsTab = ({
                   agent={agent} 
                   timezone={timezone}
                   jobCount={jobCounts[agent.agent_id] || 0}
-                  getStatus={getAgentStatus}
-                  getAvailability={getAgentAvailability}
+                  getStatus={(agent) => getAgentStatus(agent, OFFLINE_THRESHOLD_MS)}
+                  getAvailability={(agent) => getAgentAvailability(agent, OFFLINE_THRESHOLD_MS)}
                   onTestJobClick={onTestJobClick}
                   onDeregisterClick={deregisterAgent}
                 />

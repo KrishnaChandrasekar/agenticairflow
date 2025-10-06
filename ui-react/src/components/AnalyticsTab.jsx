@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toTs } from '../utils/api';
 
 // Ensure toTs is available globally for time filtering
@@ -6,7 +6,7 @@ if (typeof window !== 'undefined') {
   window.toTs = toTs;
 }
 
-// Simple deep equality check
+// Simple deep equality check - MOVED OUTSIDE COMPONENT
 const deepEqual = (obj1, obj2) => {
   if (obj1 === obj2) return true;
   if (obj1 == null || obj2 == null) return false;
@@ -24,6 +24,17 @@ const deepEqual = (obj1, obj2) => {
   return true;
 };
 
+// Parse job type helper - MOVED OUTSIDE COMPONENT to prevent circular dependencies
+const parseJobType = (job) => {
+  try {
+    if (job && job.labels && job.labels["job-type"] === "test") return "Test Job";
+    return "Airflow Job";
+  } catch (error) {
+    console.warn('Error parsing job type:', error);
+    return "Airflow Job";
+  }
+};
+
 const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
   const chartRef = useRef(null);
   const gaugeRef = useRef(null);
@@ -39,12 +50,6 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [prevData, setPrevData] = useState({ dualGauge: null });
-
-  // Parse job type helper
-  const parseJobType = useCallback((job) => {
-    if (job.labels && job.labels["job-type"] === "test") return "Test Job";
-    return "Airflow Job";
-  }, []);
 
   // Load D3.js
   useEffect(() => {
@@ -66,9 +71,20 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       setError('Failed to load visualization library');
       setLoading(false);
     };
+    
+    // Add timeout to prevent indefinite loading
+    const timeoutId = setTimeout(() => {
+      if (!window.d3) {
+        console.error('D3.js loading timeout');
+        setError('Visualization library loading timeout');
+        setLoading(false);
+      }
+    }, 10000); // 10 second timeout
+    
     document.head.appendChild(script);
 
     return () => {
+      clearTimeout(timeoutId);
       const existingScript = document.querySelector('script[src="https://d3js.org/d3.v7.min.js"]');
       if (existingScript) {
         document.head.removeChild(existingScript);
@@ -77,40 +93,49 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
   }, []);
 
   // Helper for Job Type Summary
-  const renderJobTypeSummary = useCallback((jobs) => {
+  const renderJobTypeSummary = (jobs) => {
     const container = jobTypeLegendRef.current;
-    if (!container) return;
+    if (!container || !jobs) return;
 
-    const testJobs = jobs.filter(j => parseJobType(j) === "Test Job").length;
-    const airflowJobs = jobs.filter(j => parseJobType(j) === "Airflow Job").length;
+    try {
+      const testJobs = jobs.filter(j => parseJobType(j) === "Test Job").length;
+      const airflowJobs = jobs.filter(j => parseJobType(j) === "Airflow Job").length;
 
-    if (testJobs === 0 && airflowJobs === 0) {
-      container.innerHTML = `
-        <div class="bg-gray-50 rounded-lg p-4 text-center">
-          <div class="text-gray-500 text-sm">No jobs to display</div>
-        </div>
-      `;
-    } else {
-      container.innerHTML = `
-        <div class="bg-white rounded-lg p-4 border border-gray-200">
-          <div class="text-lg font-semibold text-gray-800 mb-3">Job Type Summary</div>
-          <div class="space-y-2">
-            <span class="text-sm">Test Jobs: ${testJobs}</span>
-            <br>
-            <span class="text-sm">Airflow Jobs: ${airflowJobs}</span>
+      if (testJobs === 0 && airflowJobs === 0) {
+        container.innerHTML = `
+          <div class="bg-gray-50 rounded-lg p-4 text-center">
+            <div class="text-gray-500 text-sm">No jobs to display</div>
           </div>
+        `;
+      } else {
+        container.innerHTML = `
+          <div class="bg-white rounded-lg p-4 border border-gray-200">
+            <div class="text-lg font-semibold text-gray-800 mb-3">Job Type Summary</div>
+            <div class="space-y-2">
+              <span class="text-sm">Test Jobs: ${testJobs}</span>
+              <br>
+              <span class="text-sm">Airflow Jobs: ${airflowJobs}</span>
+            </div>
+          </div>
+        `;
+      }
+    } catch (error) {
+      console.error('Error rendering job type summary:', error);
+      container.innerHTML = `
+        <div class="bg-red-50 rounded-lg p-4 text-center">
+          <div class="text-red-500 text-sm">Error loading job summary</div>
         </div>
       `;
     }
-
-  }, [parseJobType]);
+  };
 
   // Modern Gauge Chart
-  const renderModernGauge = useCallback((jobs) => {
-    if (!gaugeRef.current) return;
+  const renderModernGauge = (jobs) => {
+    if (!gaugeRef.current || !jobs) return;
     
-    // EXPLICIT EMPTY STATE HANDLING
-    if (jobs.length === 0) {
+    try {
+      // EXPLICIT EMPTY STATE HANDLING
+      if (jobs.length === 0) {
       const container = gaugeRef.current;
       container.innerHTML = `
         <div class="modern-gauge-container" style="position: relative; width: 320px; height: 180px; display: flex; align-items: center; justify-content: center; gap: 24px; font-family: system-ui, -apple-system, sans-serif;">
@@ -277,9 +302,19 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       }, 25);
       
     }, 100);
-  }, []);
+    } catch (error) {
+      console.error('Error rendering modern gauge:', error);
+      if (gaugeRef.current) {
+        gaugeRef.current.innerHTML = `
+          <div class="text-red-500 text-center p-4">
+            Error loading gauge chart
+          </div>
+        `;
+      }
+    }
+  };
 
-  const renderStackedBarChart = useCallback((jobs) => {
+  const renderStackedBarChart = (jobs) => {
     if (!chartRef.current) {
       console.log('❌ Chart container ref not available');
       return;
@@ -544,9 +579,9 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       .style("font-size", "12px")
       .text(d => d);
       
-  }, [parseJobType]);
+  };
 
-  const renderHeatmap = useCallback((jobs) => {
+  const renderHeatmap = (jobs) => {
     if (!heatmapRef.current || !window.d3) return;
     
     const container = heatmapRef.current;
@@ -739,9 +774,9 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       .style("fill", "#4b5563")
       .text(d => `${d}:00`);
       
-  }, []);
+  };
 
-  const renderDonutChart = useCallback((jobs, containerRef, title, filterFn) => {
+  const renderDonutChart = (jobs, containerRef, title, filterFn) => {
     if (!containerRef.current || !window.d3) return;
     
     const container = containerRef.current;
@@ -815,9 +850,9 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       .style("fill", "white")
       .text(d => d.data.value);
       
-  }, []);
+  };
 
-  const renderLegend = useCallback((jobs, containerRef, title, filterFn) => {
+  const renderLegend = (jobs, containerRef, title, filterFn) => {
     if (!containerRef.current) return;
     
     const container = containerRef.current;
@@ -867,33 +902,52 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
         </div>
       </div>
     `;
-  }, []);
+  };
 
-  // Update charts when data changes
+  // Update charts when data changes - SIMPLIFIED to prevent circular dependencies
   useEffect(() => {
     if (!d3Loaded || loading) return;
 
-    // Apply time filter to all jobs
-    const filteredJobs = filterJobsByTime ? filterJobsByTime(jobs) : jobs;
-    
-    console.log('📊 Analytics Tab - Rendering charts with', filteredJobs.length, 'filtered jobs (', jobs.length, 'total )');
+    try {
+      // Apply time filter to all jobs
+      const filteredJobs = filterJobsByTime ? filterJobsByTime(jobs) : jobs;
+      
+      if (!filteredJobs || !Array.isArray(filteredJobs)) {
+        console.warn('📊 Analytics Tab - Invalid jobs data:', filteredJobs);
+        return;
+      }
+      
+      console.log('📊 Analytics Tab - Rendering charts with', filteredJobs.length, 'filtered jobs (', jobs.length, 'total )');
 
-    renderModernGauge(filteredJobs);
-    renderStackedBarChart(filteredJobs);
-    renderHeatmap(filteredJobs);
-    renderJobTypeSummary(filteredJobs);
+      // Create simple render functions inline to avoid hoisting issues
+      const renderCharts = () => {
+        renderModernGauge(filteredJobs);
+        renderStackedBarChart(filteredJobs);
+        renderHeatmap(filteredJobs);
+        renderJobTypeSummary(filteredJobs);
+        
+        // Define simple filter functions inline
+        const testJobFilter = (job) => parseJobType(job) === "Test Job";
+        const airflowJobFilter = (job) => parseJobType(job) === "Airflow Job";
+        
+        // Render donut charts
+        renderDonutChart(filteredJobs, jobTypeDonutRef.current, "Job Types", null);
+        renderDonutChart(filteredJobs, testJobDonutRef.current, "Test Jobs", testJobFilter);
+        renderDonutChart(filteredJobs, airflowJobDonutRef.current, "Airflow Jobs", airflowJobFilter);
+        
+        // Render legends
+        renderLegend(filteredJobs, jobTypeLegendRef.current, "All Jobs", null);
+        renderLegend(filteredJobs, testJobLegendRef.current, "Test Jobs", testJobFilter);
+        renderLegend(filteredJobs, airflowJobLegendRef.current, "Airflow Jobs", airflowJobFilter);
+      };
+      
+      renderCharts();
+    } catch (error) {
+      console.error('📊 Analytics Tab - Error rendering charts:', error);
+      setError(`Chart rendering failed: ${error.message}`);
+    }
     
-    // Render donut charts
-    renderDonutChart(filteredJobs, jobTypeDonutRef, "Job Types", null);
-    renderDonutChart(filteredJobs, testJobDonutRef, "Test Jobs", job => parseJobType(job) === "Test Job");
-    renderDonutChart(filteredJobs, airflowJobDonutRef, "Airflow Jobs", job => parseJobType(job) === "Airflow Job");
-    
-    // Render legends
-    renderLegend(filteredJobs, jobTypeLegendRef, "All Jobs", null);
-    renderLegend(filteredJobs, testJobLegendRef, "Test Jobs", job => parseJobType(job) === "Test Job");
-    renderLegend(filteredJobs, airflowJobLegendRef, "Airflow Jobs", job => parseJobType(job) === "Airflow Job");
-    
-  }, [d3Loaded, jobs, loading, filterJobsByTime, renderModernGauge, renderStackedBarChart, renderHeatmap, renderDonutChart, renderLegend, renderJobTypeSummary, parseJobType]);
+  }, [d3Loaded, jobs, loading, filterJobsByTime]);
 
   if (loading) {
     return (
