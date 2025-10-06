@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { API_BASE, getAuthHeaders, fetchJSON } from '../utils/api';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { fetchJSON, API_BASE, getAuthHeaders, toTs } from '../utils/api';
 
 const SubmitJobDialog = ({ 
   agents, 
@@ -166,12 +166,12 @@ const SubmitJobDialog = ({
     }
     
     // Use same logic and threshold as AgentsTab for consistency
-    const lastHbMs = agent.last_heartbeat ? Date.parse(agent.last_heartbeat) : 0;
+    const lastHbMs = toTs(agent.last_heartbeat);
     const nowMs = Date.now();
     const OFFLINE_THRESHOLD_MS = 20 * 1000; // 20 seconds (same as AgentsTab)
     
     if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
-      return agent.active ? 'registered' : 'discovered';
+      return agent.active ? 'Registered' : 'Discovered';
     }
     
     // If agent exists but heartbeat is stale, still allow job submission but show as discovered
@@ -185,7 +185,7 @@ const SubmitJobDialog = ({
   }, [agents]);
 
   const agentStatus = getAgentStatus(selectedAgent);
-  const canSubmit = !selectedAgent || agentStatus === 'registered';
+  const canSubmit = !selectedAgent || agentStatus === 'Registered';
 
   // Agent dropdown options
   const agentOptions = [
@@ -216,15 +216,15 @@ const SubmitJobDialog = ({
     let colorClass = '';
     
     switch (status) {
-      case 'registered':
+      case 'Registered':
         message += 'Registered';
         colorClass = 'bg-gradient-to-r from-green-50 to-emerald-50 text-green-800 border-2 border-green-300';
         break;
-      case 'discovered':
+      case 'Discovered':
         message += 'Discovered';
         colorClass = 'bg-gradient-to-r from-yellow-50 to-amber-50 text-yellow-800 border-2 border-yellow-300';
         break;
-      case 'offline':
+      case 'Offline':
         message += 'Offline';
         colorClass = 'bg-gradient-to-r from-red-50 to-pink-50 text-red-700 border-2 border-red-300';
         break;
@@ -591,77 +591,6 @@ const SubmitJobDialog = ({
 
             {/* Right Column - Output */}
             <div className="flex-1 space-y-3">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <label className="form-label text-body-large font-semibold">Output</label>
-                {isPolling && (
-                  <div className="flex items-center gap-2 text-blue-600">
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span className="text-sm font-medium">Live Updates</span>
-                    <span className="text-xs text-gray-500">(only when changed)</span>
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {currentJobId && (
-                  <button 
-                    onClick={() => setIsPolling(!isPolling)}
-                    className={`inline-flex items-center gap-2 px-3 py-2 border text-body-large font-semibold rounded-lg transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1 ${
-                      isPolling 
-                        ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100 hover:border-red-400'
-                        : 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100 hover:border-green-400'
-                    }`}
-                    title={isPolling ? "Stop live updates" : "Start live updates"}
-                  >
-                    {isPolling ? (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-                        </svg>
-                        Stop
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.586a1 1 0 01.707.293l4.828 4.828a1 1 0 01.293.707V17a1 1 0 01-1 1h-1a1 1 0 01-1-1v-1.586a1 1 0 01.293-.707L16.414 13a1 1 0 01.707-.293H19a1 1 0 001-1V9a1 1 0 00-1-1h-1.586a1 1 0 01-.707-.293L12.879 3.879A1 1 0 0012.172 3.586L11 5a1 1 0 01-1.707.707L7.586 4a1 1 0 01-.293-.707L8 2a1 1 0 00-1-1H5a1 1 0 00-1 1v2.172a1 1 0 01-.293.707L1.879 7.707A1 1 0 001.586 8.414L3 10a1 1 0 001 1h2.172a1 1 0 01.707.293L9.707 14.121A1 1 0 0010.414 14.828z" />
-                        </svg>
-                        Refresh
-                      </>
-                    )}
-                  </button>
-                )}
-                <button 
-                  onClick={() => setOutput('')}
-                  disabled={!output || output === 'submitting...'}
-                  className={`inline-flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-300 text-orange-700 text-body-large font-semibold rounded-lg hover:bg-orange-100 hover:border-orange-400 transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:ring-offset-1 ${
-                    !output || output === 'submitting...' ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                  title="Clear output log"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  Clear
-                </button>
-                <button 
-                  onClick={handleCopyOutput}
-                  disabled={!output || output === 'submitting...'}
-                  className={`inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 text-gray-700 text-body-large font-semibold rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1 ${
-                    !output || output === 'submitting...' ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                  title="Copy output"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 002 2v8a2 2 0 002 2z" />
-                  </svg>
-                  Copy
-                </button>
-              </div>
-            </div>
             
             {/* Enhanced State Diagram */}
             {currentJobId && (
@@ -877,13 +806,88 @@ const SubmitJobDialog = ({
               </div>
             )}
             
+            <div className="flex items-center gap-3 mb-3">
+              <label className="form-label text-body-large font-semibold">Output</label>
+              {isPolling && (
+                <div className="flex items-center gap-2 text-blue-600">
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span className="text-sm font-medium">Live Updates</span>
+                  <span className="text-xs text-gray-500">(only when changed)</span>
+                </div>
+              )}
+            </div>
+            
+            {/* Output container with floating buttons */}
+            <div className="relative">
               <pre 
                 ref={outputRef}
-                className="p-4 rounded-lg border border-gray-200 overflow-auto text-mono whitespace-pre-wrap break-words bg-gray-900 text-green-400 shadow-inner"
+                className="p-4 pt-12 rounded-lg border border-gray-200 overflow-auto text-mono whitespace-pre-wrap break-words bg-gray-900 text-green-400 shadow-inner"
                 style={{ height: '520px' }}
               >
                 {output || 'No output yet...'}
               </pre>
+              
+              {/* Floating buttons overlay */}
+              <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+                {currentJobId && (
+                  <button 
+                    onClick={() => setIsPolling(!isPolling)}
+                    className={`inline-flex items-center gap-2 px-3 py-2 border text-body font-semibold rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1 ${
+                      isPolling 
+                        ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100 hover:border-red-400'
+                        : 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100 hover:border-green-400'
+                    }`}
+                    title={isPolling ? "Stop live updates" : "Start live updates"}
+                  >
+                    {isPolling ? (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                        </svg>
+                        Stop
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.586a1 1 0 01.707.293l4.828 4.828a1 1 0 01.293.707V17a1 1 0 01-1 1h-1a1 1 0 01-1-1v-1.586a1 1 0 01.293-.707L16.414 13a1 1 0 01.707-.293H19a1 1 0 001-1V9a1 1 0 00-1-1h-1.586a1 1 0 01-.707-.293L12.879 3.879A1 1 0 0012.172 3.586L11 5a1 1 0 01-1.707.707L7.586 4a1 1 0 01-.293-.707L8 2a1 1 0 00-1-1H5a1 1 0 00-1 1v2.172a1 1 0 01-.293.707L1.879 7.707A1 1 0 001.586 8.414L3 10a1 1 0 001 1h2.172a1 1 0 01.707.293L9.707 14.121A1 1 0 0010.414 14.828z" />
+                        </svg>
+                        Refresh
+                      </>
+                    )}
+                  </button>
+                )}
+                <button 
+                  onClick={() => setOutput('')}
+                  disabled={!output || output === 'submitting...'}
+                  className={`inline-flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-300 text-orange-700 text-body font-semibold rounded-lg hover:bg-orange-100 hover:border-orange-400 transition-all duration-200 shadow-lg hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-orange-300 focus:ring-offset-1 ${
+                    !output || output === 'submitting...' ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  title="Clear output log"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Clear
+                </button>
+                <button 
+                  onClick={handleCopyOutput}
+                  disabled={!output || output === 'submitting...'}
+                  className={`inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 text-gray-700 text-body font-semibold rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-lg hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1 ${
+                    !output || output === 'submitting...' ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  title="Copy output"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 002 2v8a2 2 0 002 2z" />
+                  </svg>
+                  Copy
+                </button>
+              </div>
+            </div>
             </div>
           </div>
         </div>
