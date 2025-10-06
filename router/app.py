@@ -25,25 +25,45 @@ def now_utc() -> datetime:
     # store naive UTC for compatibility with existing rows
     return datetime.utcnow()
 
-def format_execution_time(started_at, finished_at):
+def format_execution_time(started_at, finished_at, job_status=None):
     """Calculate and format execution time as human-readable string."""
-    if not started_at or not finished_at:
+    if not started_at:
         return "-"
     
-    # Handle both datetime objects and timestamp strings
+    # Handle both datetime objects and timestamp strings for started_at
     if isinstance(started_at, str):
         try:
             started_at = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
         except:
             return "-"
-    if isinstance(finished_at, str):
-        try:
-            finished_at = datetime.fromisoformat(finished_at.replace('Z', '+00:00'))
-        except:
+    
+    # For running jobs without finished_at, use current UTC time
+    if not finished_at:
+        # Only show running time if job is actually running
+        if job_status == "RUNNING":
+            finished_at = now_utc()
+        else:
             return "-"
+    else:
+        # Handle datetime objects and timestamp strings for finished_at
+        if isinstance(finished_at, str):
+            try:
+                finished_at = datetime.fromisoformat(finished_at.replace('Z', '+00:00'))
+            except:
+                return "-"
+    
+    # Ensure both timestamps are timezone-naive UTC for proper comparison
+    if hasattr(started_at, 'tzinfo') and started_at.tzinfo is not None:
+        started_at = started_at.astimezone(timezone.utc).replace(tzinfo=None)
+    if hasattr(finished_at, 'tzinfo') and finished_at.tzinfo is not None:
+        finished_at = finished_at.astimezone(timezone.utc).replace(tzinfo=None)
     
     duration = finished_at - started_at
     total_seconds = int(duration.total_seconds())
+    
+    # Ensure we don't show negative time (in case of clock skew)
+    if total_seconds < 0:
+        return "-"
     
     if total_seconds < 60:
         return f"{total_seconds}s"
@@ -88,11 +108,11 @@ Base.metadata.create_all(engine)
 # -----------------------------
 app = Flask(__name__)
 
-# Initialize Flask-RESTX for Swagger (minimal setup to avoid conflicts)
+# Initialize Flask-RESTX for Swagger (avoid root route conflicts)
 api = Api(
     app,
     version='1.0',
-    title='Agentic Router API',
+    title='Agent Router API',
     description='API for managing distributed job execution across agents',
     doc='/swagger/',  # Swagger UI will be available at /swagger/
     contact_email='support@agentic.dev',
@@ -107,6 +127,36 @@ api = Api(
     },
     security='Bearer'
 )
+
+# Custom 404 handler to provide meaningful response for root endpoint
+@app.errorhandler(404)
+def not_found(error):
+    """Custom 404 handler that provides API information for root requests"""
+    # Check if the request is for the root path
+    if request.path == '/':
+        return jsonify({
+            "service": "Agent Router API",
+            "message": "Welcome to the Agent Router API",
+            "version": "1.0",
+            "documentation": "/swagger/",
+            "status": "/status",
+            "health": "/health",
+            "endpoints": {
+                "health": "/health",
+                "agents": "/agents", 
+                "jobs": "/jobs",
+                "submit": "/submit",
+                "status": "/status/<job_id>",
+                "logs": "/logs/<job_id>",
+                "router_status": "/status"
+            }
+        }), 200
+    
+    # For other 404s, return standard error
+    return jsonify({
+        "detail": f"404 Not Found: The requested URL {request.path} was not found on the server.",
+        "error": "not_found"
+    }), 404
 
 # Define API models for Swagger documentation
 agent_model = api.model('Agent', {
@@ -261,7 +311,54 @@ class Health(Resource):
         """Health check endpoint"""
         return {"ok": True, "db": True}
 
-# Root route is handled by Flask-RESTX automatically
+@app.route('/status')
+def router_status():
+    """Router status and API information"""
+    try:
+        # Get agent statistics
+        with Session() as s:
+            total_agents = s.query(Agent).count()
+            active_agents = s.query(Agent).filter(Agent.active == True).count()
+            
+            # Get job statistics
+            total_jobs = s.query(Job).count()
+            running_jobs = s.query(Job).filter(Job.status == 'RUNNING').count()
+            completed_jobs = s.query(Job).filter(Job.status.in_(['SUCCEEDED', 'FAILED'])).count()
+        
+        db_status = "connected"
+    except Exception:
+        total_agents = active_agents = 0
+        total_jobs = running_jobs = completed_jobs = 0
+        db_status = "error"
+    
+    return jsonify({
+        "service": "Agent Router API",
+        "version": "1.0",
+        "status": "running",
+        "database": db_status,
+        "endpoints": {
+            "health": "/health",
+            "agents": "/agents",
+            "jobs": "/jobs", 
+            "submit": "/submit",
+            "status_job": "/status/<job_id>",
+            "logs": "/logs/<job_id>",
+            "swagger": "/swagger/",
+            "router_status": "/status"
+        },
+        "agents": {
+            "total": total_agents,
+            "active": active_agents,
+            "inactive": total_agents - active_agents
+        },
+        "jobs": {
+            "total": total_jobs,
+            "running": running_jobs,
+            "completed": completed_jobs
+        }
+    })
+
+# Root endpoint is now handled by Flask route above
 
 
 @app.post("/agents/hello")
@@ -561,7 +658,7 @@ def status(job_id: str):
                 "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
                 "started_at": j.started_at.isoformat() if j.started_at else None,
                 "finished_at": j.finished_at.isoformat() if j.finished_at else None,
-                "execution_time": format_execution_time(j.started_at, j.finished_at),
+                "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
             }
 
     try:
@@ -581,7 +678,7 @@ def status(job_id: str):
                 "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
                 "started_at": j.started_at.isoformat() if j.started_at else None,
                 "finished_at": j.finished_at.isoformat() if j.finished_at else None,
-                "execution_time": format_execution_time(j.started_at, j.finished_at),
+                "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
             }
 
     with Session() as s:
@@ -670,7 +767,7 @@ def status(job_id: str):
             "note": j.note,
             "started_at": j.started_at.isoformat() if j.started_at else None,
             "finished_at": j.finished_at.isoformat() if j.finished_at else None,
-            "execution_time": format_execution_time(j.started_at, j.finished_at),
+            "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
         }
 
 @app.get("/logs/<job_id>")
@@ -742,7 +839,7 @@ def list_jobs():
                 "updated_at": j.updated_at.isoformat() if j.updated_at else None,
                 "started_at": j.started_at.isoformat() if j.started_at else None,
                 "finished_at": j.finished_at.isoformat() if j.finished_at else None,
-                "execution_time": format_execution_time(j.started_at, j.finished_at),
+                "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
             })
     return {"jobs": out}
 
