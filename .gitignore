@@ -374,3 +374,6 @@ ui/dist/
 ui-react/dist/
 ui-react/build/
 
+# Runtime artifacts
+agent_jobs/
+
