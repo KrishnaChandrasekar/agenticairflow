@@ -44,9 +44,13 @@ const AgentsTab = ({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
   const [pageSizeDropdownOpen, setPageSizeDropdownOpen] = useState(false);
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [availabilityDropdownOpen, setAvailabilityDropdownOpen] = useState(false);
   const [banner, setBanner] = useState({ show: false, message: '', type: 'info' });
   const [jobCounts, setJobCounts] = useState({});
   const pageSizeDropdownRef = useRef(null);
+  const statusDropdownRef = useRef(null);
+  const availabilityDropdownRef = useRef(null);
 
   const OFFLINE_THRESHOLD_MS = 20 * 1000;
 
@@ -106,19 +110,25 @@ const AgentsTab = ({
     return () => clearTimeout(timeoutId);
   }, [agents?.length, timeRange?.enabled, timeRange?.mode, timeRange?.relMins]);
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (pageSizeDropdownRef.current && !pageSizeDropdownRef.current.contains(event.target)) {
         setPageSizeDropdownOpen(false);
       }
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
+        setStatusDropdownOpen(false);
+      }
+      if (availabilityDropdownRef.current && !availabilityDropdownRef.current.contains(event.target)) {
+        setAvailabilityDropdownOpen(false);
+      }
     };
 
-    if (pageSizeDropdownOpen) {
+    if (pageSizeDropdownOpen || statusDropdownOpen || availabilityDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [pageSizeDropdownOpen]);
+  }, [pageSizeDropdownOpen, statusDropdownOpen, availabilityDropdownOpen]);
 
   // Filter and sort agents
   const filteredAgents = useMemo(() => {
@@ -247,6 +257,41 @@ const AgentsTab = ({
       availability: ''
     });
     setPage(1);
+  };
+
+  // Status dropdown options
+  const statusOptions = [
+    { value: '', label: 'All Status' },
+    { value: 'Registered', label: 'Registered' },
+    { value: 'Discovered', label: 'Discovered' },
+    { value: 'Offline', label: 'Offline' }
+  ];
+
+  // Availability dropdown options
+  const availabilityOptions = [
+    { value: '', label: 'All Availability' },
+    { value: 'Active', label: 'Active' },
+    { value: 'Inactive', label: 'Inactive' }
+  ];
+
+  const handleStatusSelect = (value) => {
+    handleFilterChange('status', value);
+    setStatusDropdownOpen(false);
+  };
+
+  const handleAvailabilitySelect = (value) => {
+    handleFilterChange('availability', value);
+    setAvailabilityDropdownOpen(false);
+  };
+
+  const getStatusLabel = () => {
+    const option = statusOptions.find(opt => opt.value === filters.status);
+    return option ? option.label : 'All Status';
+  };
+
+  const getAvailabilityLabel = () => {
+    const option = availabilityOptions.find(opt => opt.value === filters.availability);
+    return option ? option.label : 'All Availability';
   };
 
   const deregisterAgent = async (agentId) => {
@@ -636,51 +681,77 @@ const AgentsTab = ({
                 </div>
               </th>
               <th className="p-3">
-                <div className="relative">
+                <div className="relative" ref={statusDropdownRef}>
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
                     <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
-                  <select 
-                    value={filters.status}
-                    onChange={(e) => handleFilterChange('status', e.target.value)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-10 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md appearance-none"
-                >
-                  <option value=""></option>
-                    <option value="">All Status</option>
-                    <option>Registered</option>
-                    <option>Discovered</option>
-                    <option>Offline</option>
-                  </select>
+                  <button
+                    onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                    className="border border-blue-200 rounded-lg pl-10 pr-10 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md text-left"
+                  >
+                    {getStatusLabel()}
+                  </button>
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none z-10">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${statusDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </div>
+                  {statusDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                      {statusOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() => handleStatusSelect(option.value)}
+                          className={`w-full text-left px-3 py-2.5 text-sm transition-all duration-150 hover:bg-blue-50 hover:text-blue-900 ${
+                            filters.status === option.value 
+                              ? 'bg-blue-100 text-blue-900 font-medium' 
+                              : 'text-gray-700'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </th>
               <th className="p-3">
-                <div className="relative">
+                <div className="relative" ref={availabilityDropdownRef}>
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
                     <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   </div>
-                  <select 
-                    value={filters.availability}
-                    onChange={(e) => handleFilterChange('availability', e.target.value)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-10 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md appearance-none"
+                  <button
+                    onClick={() => setAvailabilityDropdownOpen(!availabilityDropdownOpen)}
+                    className="border border-blue-200 rounded-lg pl-10 pr-10 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md text-left"
                   >
-                    <option value="">All Availability</option>
-                    <option>Active</option>
-                    <option>Inactive</option>
-                  </select>
+                    {getAvailabilityLabel()}
+                  </button>
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none z-10">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${availabilityDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </div>
+                  {availabilityDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                      {availabilityOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() => handleAvailabilitySelect(option.value)}
+                          className={`w-full text-left px-3 py-2.5 text-sm transition-all duration-150 hover:bg-blue-50 hover:text-blue-900 ${
+                            filters.availability === option.value 
+                              ? 'bg-blue-100 text-blue-900 font-medium' 
+                              : 'text-gray-700'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </th>
               <th className="p-3"></th>

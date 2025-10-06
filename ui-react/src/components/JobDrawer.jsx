@@ -97,6 +97,24 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
     }
   };
 
+  const handleCopyJobId = async () => {
+    try {
+      await navigator.clipboard.writeText(jobId);
+      // Could add visual feedback here
+    } catch (err) {
+      console.error('Failed to copy job ID:', err);
+    }
+  };
+
+  const handleCopyLogPath = async () => {
+    try {
+      await navigator.clipboard.writeText(combinedJob.log_path || '');
+      // Could add visual feedback here
+    } catch (err) {
+      console.error('Failed to copy log path:', err);
+    }
+  };
+
   // Memoize combined job data to prevent flickering
   const combinedJob = React.useMemo(() => {
     return { ...job, ...jobDetails };
@@ -146,6 +164,21 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
                     Job Details
                   </h4>
                   <div className="space-y-3 text-body-large">
+                    <div className="flex items-center gap-2">
+                      <span className="form-label text-body-large font-semibold min-w-[80px]">Job ID:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-mono-large bg-blue-50 px-2 py-1 rounded border font-mono">{jobId}</span>
+                        <button
+                          onClick={handleCopyJobId}
+                          className="inline-flex items-center p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-all duration-200"
+                          title="Copy Job ID"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
                     <div className="flex items-center gap-2">
                       <span className="form-label text-body-large font-semibold min-w-[80px]">Status:</span>
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-body font-semibold shadow-sm status-chip-${combinedJob.status}`}>
@@ -205,7 +238,20 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
                     </div>
                     <div>
                       <span className="form-label text-body-large font-semibold">Log path:</span>
-                      <div className="text-mono-large bg-gray-100 px-2 py-1 rounded border mt-1 break-all">{combinedJob.log_path || "-"}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="text-mono-large bg-gray-100 px-2 py-1 rounded border break-all flex-1 font-mono">{combinedJob.log_path || "-"}</div>
+                        {combinedJob.log_path && (
+                          <button
+                            onClick={handleCopyLogPath}
+                            className="inline-flex items-center p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-all duration-200 flex-shrink-0"
+                            title="Copy Log Path"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
