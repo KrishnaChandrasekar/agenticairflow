@@ -92,6 +92,62 @@ export const formatUtcOffset = (tz) => {
 
 export const formatTzLabel = (tz) => `${tz} - (${formatUtcOffset(tz)})`;
 
+// Get timezone abbreviation for a given timezone
+export const getTimezoneAbbr = (tz, date = new Date()) => {
+  try {
+    // Get the timezone abbreviation using Intl.DateTimeFormat
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      timeZoneName: 'short'
+    });
+    
+    const parts = formatter.formatToParts(date);
+    const timeZonePart = parts.find(part => part.type === 'timeZoneName');
+    
+    if (timeZonePart && timeZonePart.value) {
+      // Handle some common cases where Intl returns generic abbreviations
+      const abbreviation = timeZonePart.value;
+      
+      // Map some common timezone identifiers to more recognizable abbreviations
+      const commonMappings = {
+        'Asia/Kolkata': 'IST',
+        'Asia/Singapore': 'SGT', 
+        'Asia/Tokyo': 'JST',
+        'Europe/London': isDST(tz, date) ? 'BST' : 'GMT',
+        'America/New_York': isDST(tz, date) ? 'EDT' : 'EST',
+        'America/Los_Angeles': isDST(tz, date) ? 'PDT' : 'PST',
+        'Europe/Berlin': isDST(tz, date) ? 'CEST' : 'CET',
+        'Australia/Sydney': isDST(tz, date) ? 'AEDT' : 'AEST'
+      };
+      
+      return commonMappings[tz] || abbreviation;
+    }
+    
+    // Fallback to UTC offset format
+    return formatUtcOffset(tz).replace('UTC', '');
+  } catch (error) {
+    // Fallback to UTC offset format  
+    return formatUtcOffset(tz).replace('UTC', '');
+  }
+};
+
+// Helper function to determine if DST is in effect
+const isDST = (tz, date = new Date()) => {
+  try {
+    const jan = new Date(date.getFullYear(), 0, 1);
+    const jul = new Date(date.getFullYear(), 6, 1);
+    
+    const janOffset = tzOffsetMinutes(tz, jan);
+    const julOffset = tzOffsetMinutes(tz, jul);
+    const currentOffset = tzOffsetMinutes(tz, date);
+    
+    // DST is in effect if current offset is different from standard time
+    return currentOffset !== Math.max(janOffset, julOffset);
+  } catch {
+    return false;
+  }
+};
+
 // Parse an instant robustly: if ISO has no timezone info, assume UTC
 export const parseInstant = (x) => {
   if (x == null) return null;
@@ -107,7 +163,8 @@ export const parseInstant = (x) => {
 export const fmtDate = (iso, tz) => {
   if (!iso) return "-";
   try {
-    return new Intl.DateTimeFormat(undefined, {
+    const date = parseInstant(iso);
+    const formattedDate = new Intl.DateTimeFormat(undefined, {
       timeZone: tz, 
       year: "numeric", 
       month: "short", 
@@ -115,7 +172,10 @@ export const fmtDate = (iso, tz) => {
       hour: "2-digit", 
       minute: "2-digit", 
       second: "2-digit"
-    }).format(parseInstant(iso));
+    }).format(date);
+    
+    const tzAbbr = getTimezoneAbbr(tz, date);
+    return `${formattedDate} ${tzAbbr}`;
   } catch { 
     return iso; 
   }

@@ -564,7 +564,7 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
 
 const JobRow = ({ job, timezone, onJobClick }) => {
   return (
-    <tr className="border-b border-slate-100 hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 hover:shadow-sm transition-all duration-200 group">
+    <tr className="border-b border-slate-200 hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 hover:shadow-sm transition-all duration-200 group">
       <td className="p-4 table-cell-mono group-hover:text-slate-900">{job.job_id}</td>
       <td className="p-4">
         <span className={`inline-flex items-center px-2.5 py-1.5 rounded-full text-xs font-semibold shadow-sm status-chip-${job.status}`}>
@@ -591,13 +591,13 @@ const JobRow = ({ job, timezone, onJobClick }) => {
       </td>
       <td className="p-4 table-cell-mono group-hover:text-slate-900">{job.agent_id || "-"}</td>
       <td className="p-4 text-center table-cell-text font-medium group-hover:text-slate-900">{job.rc ?? "-"}</td>
-      <td className="p-4 text-secondary group-hover:text-white">
+      <td className="p-4 text-secondary">
         <div className="flex flex-col gap-1">
           <span className="text-body font-medium">{fmtDate(job.created_at, timezone)}</span>
           <span className="text-body-small text-tertiary">{fmtAgo(job.created_at)}</span>
         </div>
       </td>
-      <td className="p-4 text-secondary group-hover:text-white">
+      <td className="p-4 text-secondary">
         <div className="flex flex-col gap-1">
           <span className="text-body font-medium">{fmtDate(job.updated_at, timezone)}</span>
           <span className="text-body-small text-tertiary">{fmtAgo(job.updated_at)}</span>

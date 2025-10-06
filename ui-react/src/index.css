@@ -139,24 +139,24 @@ body,
 
 /* Table Typography */
 .table-header-text {
-    font-size: 0.875rem;
-    line-height: 1.25rem;
+    font-size: 1rem;
+    line-height: 1.5rem;
     font-weight: 600;
     letter-spacing: 0.025em;
     color: #ffffff;
 }
 
 .table-cell-text {
-    font-size: 0.875rem;
-    line-height: 1.25rem;
+    font-size: 1rem;
+    line-height: 1.5rem;
     font-weight: 400;
     color: #1f2937;
 }
 
 .table-cell-mono {
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    font-size: 0.8125rem;
-    line-height: 1.25rem;
+    font-size: 0.9375rem;
+    line-height: 1.5rem;
     font-weight: 400;
     color: #1f2937;
 }
@@ -173,6 +173,13 @@ body,
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
     font-size: 0.8125rem;
     line-height: 1.25rem;
+    font-weight: 400;
+}
+
+.text-mono-large {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 1rem; /* 16px */
+    line-height: 1.5rem;
     font-weight: 400;
 }
 
@@ -264,7 +271,7 @@ table thead.sticky tr + tr th {
 table thead.sticky input,
 table thead.sticky select {
     background: var(--blue2);
-    color: var(--blueText);
+    color: var(--blue1);
     border: 1px solid rgba(255, 255, 255, 0.18);
     outline: none;
 }
@@ -640,4 +647,121 @@ input[type="datetime-local"]:invalid {
 
 input[type="datetime-local"]:invalid::-webkit-datetime-edit {
     color: #9ca3af;
+}
+
+/* Enhanced Tooltip Styling */
+[title] {
+    position: relative;
+}
+
+/* Custom tooltip styling for better alignment and appearance */
+[title]:hover::after {
+    content: attr(title);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: nowrap;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    pointer-events: none;
+    opacity: 0;
+    animation: tooltipFadeIn 0.2s ease-out forwards;
+}
+
+[title]:hover::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 2px;
+    border: 5px solid transparent;
+    border-top-color: rgba(0, 0, 0, 0.9);
+    z-index: 1001;
+    pointer-events: none;
+    opacity: 0;
+    animation: tooltipFadeIn 0.2s ease-out forwards;
+}
+
+@keyframes tooltipFadeIn {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+/* Tooltip positioning adjustments for different locations */
+.tooltip-top[title]:hover::after {
+    bottom: 100%;
+    top: auto;
+    margin-bottom: 8px;
+    margin-top: 0;
+}
+
+.tooltip-bottom[title]:hover::after {
+    top: 100%;
+    bottom: auto;
+    margin-top: 8px;
+    margin-bottom: 0;
+}
+
+.tooltip-left[title]:hover::after {
+    right: 100%;
+    left: auto;
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+    margin-right: 8px;
+    margin-bottom: 0;
+}
+
+.tooltip-right[title]:hover::after {
+    left: 100%;
+    right: auto;
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+    margin-left: 8px;
+    margin-bottom: 0;
+}
+
+/* Table font size overrides for better readability */
+table .text-xs {
+    font-size: 0.875rem !important; /* Increase from 12px to 14px */
+    line-height: 1.25rem !important;
+}
+
+table .text-sm {
+    font-size: 1rem !important; /* Increase from 14px to 16px */
+    line-height: 1.5rem !important;
+}
+
+/* Status badges and small elements in tables */
+table .text-xs.font-semibold {
+    font-size: 0.8125rem !important; /* Slightly smaller for badges: 13px */
+    line-height: 1.125rem !important;
+}
+
+/* General table cell improvements */
+table td, table th {
+    font-size: 1rem !important;
+    line-height: 1.5rem !important;
+}
+
+/* Table headers specifically */
+table thead th {
+    font-size: 1rem !important;
+    line-height: 1.5rem !important;
 }

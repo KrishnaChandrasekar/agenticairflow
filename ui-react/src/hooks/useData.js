@@ -87,8 +87,70 @@ export const useJobs = (autoRefresh = true, refreshInterval = 2000) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const timerRef = useRef(null);
+  const statusRefreshRef = useRef(null);
 
-  const fetchJobsData = useCallback(async () => {
+  // Helper function to get individual job status (more accurate than /jobs endpoint)
+  const fetchJobStatus = useCallback(async (jobId) => {
+    try {
+      return await fetchJSON(`${API_BASE}/status/${jobId}`);
+    } catch (err) {
+      console.warn(`Failed to fetch status for job ${jobId}:`, err);
+      return null;
+    }
+  }, []);
+
+  // Enhanced job processing that checks for stale statuses
+  const refreshStaleJobStatuses = useCallback(async (jobsList) => {
+    const now = Date.now();
+    const staleThreshold = 10000; // 10 seconds
+    
+    // Find jobs that might have stale status (RUNNING jobs older than threshold)
+    const potentiallyStaleJobs = jobsList.filter(job => {
+      if (job.status !== 'RUNNING') return false;
+      
+      const updatedTime = new Date(job.updated_at).getTime();
+      return now - updatedTime > staleThreshold;
+    });
+
+    if (potentiallyStaleJobs.length === 0) return jobsList;
+
+    console.log(`🔄 Refreshing status for ${potentiallyStaleJobs.length} potentially stale jobs`);
+
+    // Fetch fresh status for potentially stale jobs
+    const statusPromises = potentiallyStaleJobs.map(job => 
+      fetchJobStatus(job.job_id).then(status => ({ job, status }))
+    );
+
+    try {
+      const statusResults = await Promise.all(statusPromises);
+      
+      // Create updated jobs list with fresh status
+      const updatedJobs = jobsList.map(job => {
+        const statusResult = statusResults.find(r => r.job.job_id === job.job_id);
+        
+        if (statusResult && statusResult.status) {
+          const freshStatus = statusResult.status;
+          console.log(`✅ Updated job ${job.job_id}: ${job.status} → ${freshStatus.status}`);
+          
+          return {
+            ...job,
+            status: (freshStatus.status || "").toUpperCase(),
+            rc: freshStatus.rc !== undefined ? freshStatus.rc : job.rc,
+            updated_at: freshStatus.updated_at || job.updated_at,
+          };
+        }
+        
+        return job;
+      });
+
+      return updatedJobs;
+    } catch (err) {
+      console.warn('Failed to refresh some job statuses:', err);
+      return jobsList;
+    }
+  }, [fetchJobStatus]);
+
+  const fetchJobsData = useCallback(async (withStatusRefresh = false) => {
     try {
       const j = await fetchJSON(`${API_BASE}/jobs?limit=1000`);
       const arr = Array.isArray(j) ? j : (j.jobs || []);
@@ -99,7 +161,7 @@ export const useJobs = (autoRefresh = true, refreshInterval = 2000) => {
         testJobIds = JSON.parse(localStorage.getItem("testJobIds") || "[]"); 
       } catch {}
       
-      const processedJobs = arr.map(x => {
+      let processedJobs = arr.map(x => {
         const job_id = x.job_id || x.id || "";
         let labels = x.labels || {};
         
@@ -119,6 +181,11 @@ export const useJobs = (autoRefresh = true, refreshInterval = 2000) => {
           labels,
         };
       });
+
+      // Optionally refresh stale job statuses for better accuracy
+      if (withStatusRefresh) {
+        processedJobs = await refreshStaleJobStatuses(processedJobs);
+      }
       
       setJobs(processedJobs);
       setError(null);
@@ -127,13 +194,21 @@ export const useJobs = (autoRefresh = true, refreshInterval = 2000) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshStaleJobStatuses]);
 
   useEffect(() => {
-    fetchJobsData();
+    fetchJobsData(true); // Initial fetch with status refresh
     
     if (autoRefresh) {
-      timerRef.current = setInterval(fetchJobsData, refreshInterval);
+      let refreshCount = 0;
+      
+      timerRef.current = setInterval(() => {
+        refreshCount++;
+        // Every 3rd refresh (6 seconds), do a status refresh for accuracy
+        const shouldRefreshStatus = refreshCount % 3 === 0;
+        fetchJobsData(shouldRefreshStatus);
+      }, refreshInterval);
+      
       return () => {
         if (timerRef.current) clearInterval(timerRef.current);
       };
@@ -142,7 +217,7 @@ export const useJobs = (autoRefresh = true, refreshInterval = 2000) => {
 
   const refreshJobs = useCallback(() => {
     setLoading(true);
-    fetchJobsData();
+    fetchJobsData(true); // Always refresh status when manually triggered
   }, [fetchJobsData]);
 
   return { jobs, loading, error, refreshJobs };

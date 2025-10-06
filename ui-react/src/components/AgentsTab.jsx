@@ -335,29 +335,46 @@ const AgentsTab = ({
     <div>
       {/* Banner */}
       {banner.show && (
-        <div className={`mb-2 px-3 py-2 rounded text-body ${
-          banner.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' :
-          banner.type === 'error' ? 'bg-red-50 text-red-800 border border-red-200' :
-          banner.type === 'confirm' ? 'bg-yellow-50 text-yellow-800 border border-yellow-200' :
-          'bg-blue-50 text-blue-800 border border-blue-200'
+        <div className={`mb-4 p-4 rounded-xl text-body shadow-md hover:shadow-lg transition-all duration-300 ${
+          banner.type === 'success' ? 'bg-gradient-to-r from-green-50 to-emerald-50 text-green-800 border-2 border-green-300' :
+          banner.type === 'error' ? 'bg-gradient-to-r from-red-50 to-pink-50 text-red-800 border-2 border-red-300' :
+          banner.type === 'confirm' ? 'bg-gradient-to-r from-amber-50 to-orange-50 text-orange-800 border-2 border-orange-300' :
+          'bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-800 border-2 border-blue-300'
         }`}>
-          {banner.message}
-          {banner.type === 'confirm' && (
-            <>
-              <button 
-                onClick={() => confirmDeregister(banner.agentId)}
-                className="ml-2 px-2 py-1 rounded bg-red-100 text-red-700 btn-text-small hover:bg-red-200 transition-colors duration-200"
-              >
-                Confirm
-              </button>
-              <button 
-                onClick={() => setBanner({ show: false })}
-                className="ml-2 px-2 py-1 rounded bg-slate-100 btn-text-small hover:bg-slate-200 transition-colors duration-200"
-              >
-                Cancel
-              </button>
-            </>
-          )}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {banner.type === 'confirm' && (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-orange-100 to-amber-100 border-2 border-orange-300 flex items-center justify-center">
+                  <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+              )}
+              <span className="font-medium">{banner.message}</span>
+            </div>
+            {banner.type === 'confirm' && (
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => confirmDeregister(banner.agentId)}
+                  className="inline-flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-red-100 to-pink-100 border-2 border-red-300 rounded-lg text-red-800 btn-text-small hover:from-red-200 hover:to-pink-200 hover:border-red-400 transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-red-300"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Confirm
+                </button>
+                <button 
+                  onClick={() => setBanner({ show: false })}
+                  className="inline-flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-slate-100 to-gray-100 border-2 border-slate-300 rounded-lg text-slate-700 btn-text-small hover:from-slate-200 hover:to-gray-200 hover:border-slate-400 transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -732,7 +749,7 @@ const AgentRow = ({
   const canSubmitTestJob = status === 'Registered' && availability === 'Active';
 
   return (
-    <tr className="border-b border-slate-100 hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 hover:shadow-sm transition-all duration-200 group">
+    <tr className="border-b border-slate-200 hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 hover:shadow-sm transition-all duration-200 group">
       <td className="p-4 table-cell-mono group-hover:text-slate-900">{agent.agent_id}</td>
       <td className="p-4 table-cell-mono text-blue-600 hover:text-blue-800 group-hover:text-slate-900">{agent.url}</td>
       <td className="p-4">
@@ -771,7 +788,7 @@ const AgentRow = ({
           <span className="table-cell-text font-medium">{availability}</span>
         </span>
       </td>
-      <td className="p-4 text-secondary group-hover:text-white">
+      <td className="p-4 text-secondary">
         <div className="flex flex-col gap-1">
           <span className="text-body font-medium">{fmtDate(agent.last_heartbeat, timezone)}</span>
           <span className="text-body-small text-tertiary">{fmtAgo(agent.last_heartbeat)}</span>
@@ -787,23 +804,22 @@ const AgentRow = ({
           <button
             onClick={() => onTestJobClick(agent.agent_id)}
             disabled={!canSubmitTestJob}
-            className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 ${
               canSubmitTestJob 
-                ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white focus:ring-green-300 cursor-pointer' 
+                ? 'bg-gradient-to-r from-green-400 to-emerald-500 hover:from-green-500 hover:to-emerald-600 text-white focus:ring-green-300 cursor-pointer' 
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed focus:ring-gray-300'
             }`}
-            title={canSubmitTestJob ? 'Submit a Test Job' : 'Test Job can only be submitted for Registered & Active agents'}
+            title={canSubmitTestJob ? 'Test A Job' : 'Test Job can only be submitted for Registered & Active agents'}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M19 10a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
             </svg>
-            <span className="text-xs font-semibold">Test Job</span>
           </button>
           
           {status === 'Registered' && (
             <button 
               onClick={() => onDeregisterClick(agent.agent_id)}
-              className="inline-flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-300 focus:ring-offset-1"
+              className="inline-flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-red-400 to-pink-500 hover:from-red-500 hover:to-pink-600 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-300 focus:ring-offset-1"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
