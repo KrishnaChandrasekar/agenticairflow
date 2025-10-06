@@ -58,7 +58,32 @@ The plugin uses this to submit jobs to the Router and poll status.
 - Tokens: Router expects `Authorization: Bearer router-secret`; Agent expects `X-Agent-Token: agent-secret`.
 
 
-## 6. Customization
+## 6. Router UI
+
+This system now includes **two UI versions** for monitoring jobs and agents:
+
+### React UI (Primary) - Port 8090
+- **URL**: [http://localhost:8090](http://localhost:8090)  
+- **Modern React.js implementation** with improved maintainability
+- All features from the legacy UI plus enhanced performance
+- **Service**: `router-ui-react`
+
+### Legacy UI (Backup) - Port 8091  
+- **URL**: [http://localhost:8091](http://localhost:8091)
+- Original vanilla JavaScript implementation  
+- **Service**: `router-ui-legacy`
+
+Both UIs provide:
+- **Real-time monitoring** of jobs and agents
+- **Time range filtering** and timezone support
+- **Job submission** and log viewing
+- **Analytics dashboard** with charts and metrics
+- **Agent management** including registration/deregistration
+
+The React UI is recommended for new deployments and offers better development experience for future enhancements.
+
+## 7. Customization
 
 - Add a second Agent: duplicate the `agent_vm1` block in `docker-compose.yml` with `hostname: vm2.local`, change ports to avoid conflicts, and run a second task with `route_labels={"host":"vm2.local"}`.
 - Change Airflow credentials: edit the `airflow-init` command in the compose file.
+- UI Development: See `ui-react/README.md` for React UI development and customization.

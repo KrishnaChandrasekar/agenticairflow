@@ -139,12 +139,27 @@ services:
     - 8000:8000
     networks:
     - agentic_net
-  router-ui:
-    image: nginx:1.29
+  router-ui-react:
+    build:
+      context: ./ui-react
+      dockerfile: Dockerfile
     depends_on:
       - router
     ports:
       - "8090:80"
+    environment:
+      ROUTER_URL: http://router:8000
+      ROUTER_TOKEN: router-secret
+    networks:
+      - agentic_net
+
+  # Keep legacy UI for comparison (available on port 8091)
+  router-ui-legacy:
+    image: nginx:1.29
+    depends_on:
+      - router
+    ports:
+      - "8091:80"
     volumes:
       - ./ui:/usr/share/nginx/html:ro
       - ./docker/nginx.router-ui.conf:/etc/nginx/conf.d/default.conf:ro

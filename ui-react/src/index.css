@@ -1,0 +1,643 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Typography System - Roboto Font */
+html,
+body,
+*,
+*::before,
+*::after {
+    font-family: "Roboto", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji" !important;
+}
+
+/* Typography Scale & Hierarchy */
+.text-display-large {
+    font-size: 2.25rem; /* 36px */
+    line-height: 2.75rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+}
+
+.text-display {
+    font-size: 1.875rem; /* 30px */
+    line-height: 2.25rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+}
+
+.text-heading-1 {
+    font-size: 1.5rem; /* 24px */
+    line-height: 2rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+}
+
+.text-heading-2 {
+    font-size: 1.25rem; /* 20px */
+    line-height: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+}
+
+.text-heading-3 {
+    font-size: 1.125rem; /* 18px */
+    line-height: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+}
+
+.text-body-large {
+    font-size: 1rem; /* 16px */
+    line-height: 1.5rem;
+    font-weight: 400;
+    letter-spacing: 0;
+}
+
+.text-body {
+    font-size: 0.875rem; /* 14px */
+    line-height: 1.25rem;
+    font-weight: 400;
+    letter-spacing: 0;
+}
+
+.text-body-medium {
+    font-size: 0.875rem; /* 14px */
+    line-height: 1.25rem;
+    font-weight: 500;
+    letter-spacing: 0;
+}
+
+.text-body-small {
+    font-size: 0.75rem; /* 12px */
+    line-height: 1rem;
+    font-weight: 400;
+    letter-spacing: 0.025em;
+}
+
+.text-caption {
+    font-size: 0.6875rem; /* 11px */
+    line-height: 1rem;
+    font-weight: 400;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+/* Text Colors */
+.text-primary {
+    color: #1f2937; /* gray-800 */
+}
+
+.text-secondary {
+    color: #4b5563; /* gray-600 */
+}
+
+.text-tertiary {
+    color: #6b7280; /* gray-500 */
+}
+
+.text-accent {
+    color: #2563eb; /* blue-600 */
+}
+
+.text-accent-hover:hover {
+    color: #1d4ed8; /* blue-700 */
+}
+
+/* Button Typography */
+.btn-text {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 500;
+    letter-spacing: 0.025em;
+}
+
+.btn-text-small {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 500;
+    letter-spacing: 0.025em;
+}
+
+/* Form Label Typography */
+.form-label {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 500;
+    color: #374151; /* gray-700 */
+    letter-spacing: 0;
+}
+
+/* Status Badge Typography */
+.status-text {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+}
+
+/* Table Typography */
+.table-header-text {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    color: #ffffff;
+}
+
+.table-cell-text {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 400;
+    color: #1f2937;
+}
+
+.table-cell-mono {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    font-weight: 400;
+    color: #1f2937;
+}
+
+/* Code/Mono Typography */
+.text-mono-small {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 400;
+}
+
+.text-mono {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    font-weight: 400;
+}
+
+:root {
+    --blue1: #0d2b4f;
+    --blue2: #12365e;
+    --blueText: #ffffff;
+    --muted: #c9d6e7;
+    --row-h: 34px;
+}
+
+/* Modern Status chips */
+.chip {
+    border-radius: 9999px;
+    padding: 2px 8px;
+    font-size: 12px;
+}
+
+/* Modern status chip styles */
+.status-chip-QUEUED {
+    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+
+.status-chip-RUNNING {
+    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+    color: #1e40af;
+    border: 1px solid #93c5fd;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.1);
+}
+
+.status-chip-SUCCEEDED {
+    background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+    color: #166534;
+    border: 1px solid #86efac;
+    box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.1);
+}
+
+.status-chip-FAILED {
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.1);
+}
+
+/* Legacy status styles for backward compatibility */
+.st-QUEUED {
+    background: #eef;
+    color: #334;
+}
+
+.st-RUNNING {
+    background: #eaf7ff;
+    color: #045;
+}
+
+.st-SUCCEEDED {
+    background: #e9f8ef;
+    color: #064;
+}
+
+.st-FAILED {
+    background: #fee;
+    color: #600;
+}
+
+/* Modal backdrop */
+dialog::backdrop {
+    background: rgba(0,0,0,.25);
+}
+
+/* Table styles */
+table thead.sticky,
+table thead.sticky tr:first-child {
+    background: var(--blue1) !important;
+    color: var(--blueText) !important;
+}
+
+table thead.sticky th {
+    color: var(--blueText) !important;
+    font-weight: 600;
+}
+
+table thead.sticky tr + tr th {
+    background: var(--blue2) !important;
+}
+
+table thead.sticky input,
+table thead.sticky select {
+    background: var(--blue2);
+    color: var(--blueText);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    outline: none;
+}
+
+table thead.sticky input::placeholder {
+    color: var(--muted);
+}
+
+table tbody td,
+table tbody th {
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+/* Button hover effects */
+button:hover {
+    background-color: #cbd5e1 !important;
+    box-shadow: 0 0 0 2px #2563eb33;
+    transition: background 0.15s, box-shadow 0.15s;
+}
+
+button:active {
+    background-color: #94a3b8 !important;
+}
+
+/* Analytics styles */
+.analytics-chart {
+    width: 100%;
+    height: 340px;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    min-height: 340px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.analytics-gauge-box {
+    width: 340px;
+    height: 340px;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    margin-bottom: 12px;
+    padding: 18px 0 8px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.analytics-gauge-title {
+    font-size: 1.3em;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 4px;
+}
+
+.analytics-heatmap-box {
+    width: 720px;
+    max-width: 100%;
+    height: 280px;
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    padding: 18px 0 0 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.analytics-heatmap-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 8px;
+    padding-left: 0;
+}
+
+.analytics-donut-box {
+    background: #f8fafc;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    margin-top: 16px;
+    margin-bottom: 16px;
+    padding: 18px 0 8px 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.analytics-donut-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 8px;
+    padding-left: 0;
+}
+
+.analytics-donut-flexrow {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    justify-content: center;
+}
+
+.analytics-donut-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-left: 18px;
+    justify-content: flex-start;
+    align-items: flex-start;
+    min-width: 120px;
+}
+
+/* Custom hover colors for table rows */
+.hover\:from-blue-25:hover {
+    --tw-gradient-from: #eff6ff;
+    --tw-gradient-to: rgba(239, 246, 255, 0);
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.hover\:to-indigo-25:hover {
+    --tw-gradient-to: #eef2ff;
+}
+
+/* Filter row gradient backgrounds */
+.from-blue-25 {
+    --tw-gradient-from: #eff6ff;
+    --tw-gradient-to: rgba(239, 246, 255, 0);
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.to-indigo-25 {
+    --tw-gradient-to: #eef2ff;
+}
+
+/* Enhanced Tab styles with modern design */
+.tab-btn {
+    background: linear-gradient(to bottom, transparent, rgba(248, 250, 252, 0.5));
+    border: none;
+    outline: none;
+    padding: 0.75rem 1.5rem;
+    margin-bottom: -2px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #64748b;
+    border-bottom: 2px solid transparent;
+    border-radius: 0.75rem 0.75rem 0 0;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    position: relative;
+    backdrop-filter: blur(4px);
+}
+
+.tab-btn.active {
+    color: #1d4ed8 !important;
+    background: linear-gradient(to bottom, #ffffff, #dbeafe) !important;
+    border-bottom: 2px solid #2563eb !important;
+    box-shadow: 0 -2px 8px rgba(37, 99, 235, 0.1), 0 2px 4px rgba(0, 0, 0, 0.02) !important;
+    z-index: 1;
+    transform: translateY(-1px);
+}
+
+.tab-btn:not(.active):hover {
+    background: linear-gradient(to bottom, #f8fafc, #e2e8f0);
+    color: #374151;
+    border-bottom: 2px solid #d1d5db;
+    transform: translateY(-0.5px);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.tab-btn:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: -2px;
+}
+
+/* Tab container enhancement */
+.tabs-container {
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    border-bottom: 1px solid #e2e8f0;
+    position: relative;
+}
+
+.tabs-container::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #cbd5e1 20%, #cbd5e1 80%, transparent);
+}
+
+/* Agent row highlight */
+.agent-row-highlight {
+    background-color: #fef3c7 !important;
+    transition: background 0.15s;
+}
+
+/* Log copy button */
+.log-copy-btn {
+    background: #f1f5f9;
+    border: 1.5px solid #cbd5e1;
+    cursor: pointer;
+    padding: 4px 7px;
+    border-radius: 6px;
+    transition: background 0.2s, border 0.2s, box-shadow 0.2s;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    outline: none;
+    position: relative;
+}
+
+.log-copy-btn:hover,
+.log-copy-btn:focus {
+    background: #e0f2fe;
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 2px #38bdf855;
+}
+
+.log-copy-btn.copied {
+    background: #e0f7e9;
+    border-color: #22c55e;
+}
+
+/* Custom table header hover color */
+.table-header-hover {
+    transition: all 0.2s ease;
+}
+
+.table-header-hover:hover {
+    color: #ffffff !important;
+    background-color: #2c619d !important;
+}
+
+.table-header-hover:hover svg {
+    color: #ffffff !important;
+}
+
+.table-header-hover:hover span {
+    color: #ffffff !important;
+}
+
+/* DateTime Picker Styling - Browser-specific customizations */
+/* Webkit/Blink browsers (Chrome, Safari, Edge) */
+input[type="datetime-local"] {
+    font-family: "Roboto", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial !important;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 400;
+    color: #1f2937;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: textfield;
+}
+
+input[type="datetime-local"]::-webkit-datetime-edit {
+    padding: 2px 4px;
+    color: #1f2937;
+    font-family: "Roboto", ui-sans-serif, system-ui !important;
+    font-size: 0.875rem;
+}
+
+input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+    color: #1f2937;
+    font-family: "Roboto", ui-sans-serif, system-ui !important;
+}
+
+input[type="datetime-local"]::-webkit-datetime-edit-text {
+    color: #6b7280;
+    font-weight: 500;
+}
+
+input[type="datetime-local"]::-webkit-datetime-edit-month-field,
+input[type="datetime-local"]::-webkit-datetime-edit-day-field,
+input[type="datetime-local"]::-webkit-datetime-edit-year-field,
+input[type="datetime-local"]::-webkit-datetime-edit-hour-field,
+input[type="datetime-local"]::-webkit-datetime-edit-minute-field {
+    color: #1f2937;
+    font-weight: 500;
+    padding: 2px;
+    background: transparent;
+    border: none;
+    outline: none;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    background: linear-gradient(135deg, #fb923c 0%, #f97316 100%);
+    border-radius: 4px;
+    cursor: pointer;
+    width: 20px;
+    height: 20px;
+    margin-left: 8px;
+    filter: none;
+    opacity: 0.8;
+    transition: all 0.2s ease;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+    transform: scale(1.1);
+    box-shadow: 0 2px 6px rgba(249, 115, 22, 0.3);
+}
+
+/* Focus states for datetime inputs */
+input[type="datetime-local"]:focus::-webkit-datetime-edit-month-field,
+input[type="datetime-local"]:focus::-webkit-datetime-edit-day-field,
+input[type="datetime-local"]:focus::-webkit-datetime-edit-year-field,
+input[type="datetime-local"]:focus::-webkit-datetime-edit-hour-field,
+input[type="datetime-local"]:focus::-webkit-datetime-edit-minute-field {
+    background: rgba(251, 146, 60, 0.1);
+    border-radius: 3px;
+    color: #ea580c;
+    font-weight: 600;
+}
+
+/* Firefox datetime input styling */
+input[type="datetime-local"]::-moz-placeholder {
+    color: #9ca3af;
+    opacity: 1;
+    font-family: "Roboto", ui-sans-serif, system-ui !important;
+}
+
+/* Enhanced datetime input container styling */
+.datetime-input-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.datetime-input-container::after {
+    content: "";
+    position: absolute;
+    right: 8px;
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23f97316'%3e%3cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'/%3e%3c/svg%3e");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+.datetime-input-container:hover::after {
+    opacity: 1;
+}
+
+/* Custom styling for datetime picker popup (limited browser support) */
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3e%3cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2.5' d='M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'/%3e%3c/svg%3e");
+        background-size: 14px 14px;
+        background-repeat: no-repeat;
+        background-position: center;
+    }
+}
+
+/* Enhanced placeholder text styling */
+input[type="datetime-local"]:invalid {
+    color: #9ca3af;
+}
+
+input[type="datetime-local"]:invalid::-webkit-datetime-edit {
+    color: #9ca3af;
+}

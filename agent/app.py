@@ -167,7 +167,7 @@ def _auto_register_forever():
 def _send_hello():
     try:
         requests.post(f"{ROUTER_URL.rstrip('/')}/agents/hello",
-                      json={"agent_id": AGENT_ID, "url": SELF_URL, "labels": (json.loads(AGENT_LABELS) if AGENT_LABELS else {})},
+                      json={"agent_id": AGENT_ID, "url": SELF_URL, "labels": AGENT_LABELS},
                       timeout=10)
     except Exception as e:
         print("hello failed:", e, flush=True)
@@ -184,7 +184,7 @@ def _auto_register_once():
     try:
         r = requests.post(f"{ROUTER_URL.rstrip('/')}/agents/register",
                           headers={"X-Agent-Token": AGENT_TOKEN},
-                          json={"agent_id": AGENT_ID, "url": SELF_URL, "labels": (json.loads(AGENT_LABELS) if AGENT_LABELS else {})},
+                          json={"agent_id": AGENT_ID, "url": SELF_URL, "labels": AGENT_LABELS},
                           timeout=10)
         print("auto-register:", r.status_code, r.text[:120], flush=True)
     except Exception as e:
@@ -333,20 +333,6 @@ def status(job_id: str):
             _writeln(logp, f"[agent] status=RUNNING\n")
             _write_status("RUNNING")
         return jsonify({"status": "RUNNING", "job_id": job_id, "log_path": logp, "rc": None})
-
-
-        try:
-            rc = int(open(rcp, "r", encoding="utf-8", errors="ignore").read().strip())
-        except Exception:
-            rc = 1
-        return jsonify(
-            {
-                "status": "SUCCEEDED" if rc == 0 else "FAILED",
-                "job_id": job_id,
-                "log_path": logp,
-                "rc": rc,
-            }
-        )
 
     # Neither pid nor rc present → consider it a failed spawn and surface that
     return jsonify(

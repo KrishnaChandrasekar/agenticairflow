@@ -65,7 +65,11 @@ def _json_errors(e):
 # CORS for the browser UI
 try:
     from flask_cors import CORS
-    CORS(app, resources={r"/*": {"origins": "*"}})
+    CORS(app, resources={r"/*": {
+        "origins": "*",
+        "allow_headers": ["Content-Type", "Authorization"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    }})
 except Exception:
     pass
 
