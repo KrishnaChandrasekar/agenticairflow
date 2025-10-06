@@ -137,6 +137,9 @@ export const useJobs = (autoRefresh = true, refreshInterval = 2000) => {
             status: (freshStatus.status || "").toUpperCase(),
             rc: freshStatus.rc !== undefined ? freshStatus.rc : job.rc,
             updated_at: freshStatus.updated_at || job.updated_at,
+            started_at: freshStatus.started_at || job.started_at,
+            finished_at: freshStatus.finished_at || job.finished_at,
+            execution_time: freshStatus.execution_time || job.execution_time,
           };
         }
         
@@ -178,6 +181,9 @@ export const useJobs = (autoRefresh = true, refreshInterval = 2000) => {
           log_path: x.log_path || "",
           created_at: x.created_at || x.createdAt || null,
           updated_at: x.updated_at || x.updatedAt || null,
+          started_at: x.started_at || null,
+          finished_at: x.finished_at || null,
+          execution_time: x.execution_time || null,
           labels,
         };
       });

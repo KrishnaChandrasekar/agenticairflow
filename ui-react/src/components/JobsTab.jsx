@@ -1,6 +1,38 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { fmtDate, fmtAgo, includesAll, matchLabels } from '../utils/api';
 
+// Utility function to format execution time duration
+const formatExecutionTime = (startedAt, finishedAt, serverExecutionTime) => {
+  // Use server-provided execution_time if available
+  if (serverExecutionTime && serverExecutionTime !== '-') {
+    return serverExecutionTime;
+  }
+  
+  if (!startedAt) return '-';
+  
+  const start = new Date(startedAt);
+  const end = finishedAt ? new Date(finishedAt) : new Date();
+  const diffMs = end - start;
+  
+  // Handle zero or near-zero duration properly
+  if (diffMs < 0) return '0s'; // Changed from '-' to '0s' for consistency
+  
+  const seconds = Math.floor(diffMs / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  if (days > 0) {
+    return `${days}d ${hours % 24}h`;
+  } else if (hours > 0) {
+    return `${hours}h ${minutes % 60}m`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`;
+  } else {
+    return `${seconds}s`;
+  }
+};
+
 const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTimeRangeClear, loading }) => {
   const [filters, setFilters] = useState({
     job_id: '',
@@ -357,6 +389,18 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
               </th>
               <th 
                 className="text-left p-4 cursor-pointer table-header-text table-header-hover group" 
+                onClick={() => handleSort('execution_time')}
+              >
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span className="font-semibold text-white group-hover:text-white transition-colors">Execution Time</span>
+                  <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('execution_time')}</span>
+                </div>
+              </th>
+              <th 
+                className="text-left p-4 cursor-pointer table-header-text table-header-hover group" 
                 onClick={() => handleSort('created_at')}
               >
                 <div className="flex items-center gap-2">
@@ -485,6 +529,15 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
               </th>
               <th className="p-3">
                 <div className="flex items-center justify-center h-11">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-amber-100 to-orange-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  </div>
+                </div>
+              </th>
+              <th className="p-3">
+                <div className="flex items-center justify-center h-11">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-100 to-indigo-100 flex items-center justify-center">
                     <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -591,6 +644,16 @@ const JobRow = ({ job, timezone, onJobClick }) => {
       </td>
       <td className="p-4 table-cell-mono group-hover:text-slate-900">{job.agent_id || "-"}</td>
       <td className="p-4 text-center table-cell-text font-medium group-hover:text-slate-900">{job.rc ?? "-"}</td>
+      <td className="p-4 text-center">
+        <div className="flex flex-col gap-1">
+          <span className="text-body-large font-medium text-slate-700 group-hover:text-slate-900">
+            {formatExecutionTime(job.started_at, job.finished_at, job.execution_time)}
+          </span>
+          {job.status === 'RUNNING' && job.started_at && (
+            <span className="text-xs text-amber-600 font-medium animate-pulse">Running</span>
+          )}
+        </div>
+      </td>
       <td className="p-4 text-secondary">
         <div className="flex flex-col gap-1">
           <span className="text-body-large font-medium">{fmtDate(job.created_at, timezone)}</span>

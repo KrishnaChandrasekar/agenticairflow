@@ -1,4 +1,4 @@
-import os, json, uuid, requests
+import os, json, uuid, requests, sys
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
@@ -25,6 +25,38 @@ def now_utc() -> datetime:
     # store naive UTC for compatibility with existing rows
     return datetime.utcnow()
 
+def format_execution_time(started_at, finished_at):
+    """Calculate and format execution time as human-readable string."""
+    if not started_at or not finished_at:
+        return "-"
+    
+    # Handle both datetime objects and timestamp strings
+    if isinstance(started_at, str):
+        try:
+            started_at = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+        except:
+            return "-"
+    if isinstance(finished_at, str):
+        try:
+            finished_at = datetime.fromisoformat(finished_at.replace('Z', '+00:00'))
+        except:
+            return "-"
+    
+    duration = finished_at - started_at
+    total_seconds = int(duration.total_seconds())
+    
+    if total_seconds < 60:
+        return f"{total_seconds}s"
+    elif total_seconds < 3600:
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        return f"{minutes}m {seconds}s"
+    else:
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        return f"{hours}h {minutes}m {seconds}s"
+
 class Job(Base):
     __tablename__ = "jobs"
     job_id     = Column(String, primary_key=True)
@@ -38,6 +70,8 @@ class Job(Base):
     log_path   = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now_utc)
     updated_at = Column(DateTime, default=now_utc, onupdate=now_utc)
+    started_at = Column(DateTime, nullable=True)   # When job execution starts
+    finished_at = Column(DateTime, nullable=True)  # When job execution completes
 
 class Agent(Base):
     __tablename__ = "agents"
@@ -93,7 +127,10 @@ job_model = api.model('Job', {
     'labels': fields.Raw(description='Job labels for routing (JSON object)'),
     'log_path': fields.String(description='Path to job logs on the agent'),
     'created_at': fields.DateTime(description='Job creation timestamp'),
-    'updated_at': fields.DateTime(description='Last job update timestamp')
+    'updated_at': fields.DateTime(description='Last job update timestamp'),
+    'started_at': fields.DateTime(description='Job execution start timestamp'),
+    'finished_at': fields.DateTime(description='Job execution completion timestamp'),
+    'execution_time': fields.String(description='Human-readable execution duration (e.g., "2m 34s")')
 })
 
 job_submit_model = api.model('JobSubmit', {
@@ -181,6 +218,19 @@ def _coerce_json(value, default):
         return json.loads(s)
     except Exception:
         return default
+
+def parse_agent_timestamp(timestamp_str):
+    """Parse timestamp from agent (format: 'YYYY-MM-DD HH:MM:SS') to datetime object"""
+    if not timestamp_str:
+        print(f"[ROUTER DEBUG] parse_agent_timestamp: empty timestamp_str", file=sys.stderr)
+        return None
+    try:
+        result = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+        print(f"[ROUTER DEBUG] parse_agent_timestamp: '{timestamp_str}' -> {result}", file=sys.stderr)
+        return result
+    except Exception as e:
+        print(f"[ROUTER DEBUG] parse_agent_timestamp: failed to parse '{timestamp_str}': {e}", file=sys.stderr)
+        return None
 
 # -----------------------------
 # Endpoints
@@ -430,6 +480,7 @@ def submit():
                 j.status   = "RUNNING"
                 j.agent_id = agent.agent_id
                 j.log_path = out.get("log_path")
+                j.started_at = now_utc()  # Capture start time when job is dispatched successfully
                 j.updated_at = now_utc()
                 s.commit()
         else:
@@ -470,7 +521,10 @@ def submit():
     'rc': fields.Integer(description='Exit code'),
     'agent_id': fields.String(description='Agent executing the job'),
     'log_path': fields.String(description='Path to job logs'),
-    'note': fields.String(description='Additional information')
+    'note': fields.String(description='Additional information'),
+    'started_at': fields.DateTime(description='Job execution start timestamp'),
+    'finished_at': fields.DateTime(description='Job execution completion timestamp'),
+    'execution_time': fields.String(description='Human-readable execution duration')
 }))
 def status(job_id: str):
     """Get job status and details"""
@@ -504,7 +558,10 @@ def status(job_id: str):
             print(f"[ROUTER DEBUG] No agent found for job {job_id}, returning DB status={j.status} rc={j.rc}", file=sys.stderr)
             return {
                 "job_id": j.job_id, "status": j.status, "rc": j.rc,
-                "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note
+                "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
+                "started_at": j.started_at.isoformat() if j.started_at else None,
+                "finished_at": j.finished_at.isoformat() if j.finished_at else None,
+                "execution_time": format_execution_time(j.started_at, j.finished_at),
             }
 
     try:
@@ -521,7 +578,10 @@ def status(job_id: str):
             print(f"[ROUTER DEBUG] Agent probe failed for job {job_id}, status={j.status} rc={j.rc}", file=sys.stderr)
             return {
                 "job_id": j.job_id, "status": j.status, "rc": j.rc,
-                "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note
+                "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
+                "started_at": j.started_at.isoformat() if j.started_at else None,
+                "finished_at": j.finished_at.isoformat() if j.finished_at else None,
+                "execution_time": format_execution_time(j.started_at, j.finished_at),
             }
 
     with Session() as s:
@@ -546,11 +606,47 @@ def status(job_id: str):
                 j.log_path = st.get("log_path", j.log_path)
                 if not j.agent_id:
                     j.agent_id = agent.agent_id
+                
+                # Use agent-provided timestamps if available
+                print(f"[ROUTER DEBUG] Processing timestamps for job {job_id}: agent started_at={st.get('started_at')}, finished_at={st.get('finished_at')}, current j.started_at={j.started_at}, j.finished_at={j.finished_at}", file=sys.stderr)
+                
+                if st.get("started_at"):
+                    agent_start_time = parse_agent_timestamp(st.get("started_at"))
+                    print(f"[ROUTER DEBUG] Parsed agent start time: {agent_start_time}", file=sys.stderr)
+                    if agent_start_time and not j.started_at:
+                        j.started_at = agent_start_time
+                        print(f"[ROUTER DEBUG] Set started_at from agent: {j.started_at}", file=sys.stderr)
+                
+                if st.get("finished_at"):
+                    agent_finish_time = parse_agent_timestamp(st.get("finished_at"))
+                    print(f"[ROUTER DEBUG] Parsed agent finish time: {agent_finish_time}", file=sys.stderr)
+                    if agent_finish_time and not j.finished_at:
+                        j.finished_at = agent_finish_time
+                        print(f"[ROUTER DEBUG] Set finished_at from agent: {j.finished_at}", file=sys.stderr)
+                    elif j.status != st["status"] and not j.finished_at:  # Fallback to router time if no agent timestamp
+                        j.finished_at = now_utc()
+                        print(f"[ROUTER DEBUG] Set finished_at to router time: {j.finished_at}", file=sys.stderr)
+                
                 j.updated_at = now_utc(); s.commit()
             elif st.get("status") == "RUNNING":
+                # Store previous status before updating
+                prev_status = j.status
+                j.status = "RUNNING"
                 if not j.agent_id:
                     j.agent_id = agent.agent_id
-                    j.updated_at = now_utc(); s.commit()
+                
+                # Use agent-provided start timestamp if available
+                if not j.started_at and st.get("started_at"):
+                    agent_start_time = parse_agent_timestamp(st.get("started_at"))
+                    if agent_start_time:
+                        j.started_at = agent_start_time
+                        print(f"[ROUTER DEBUG] Set started_at from agent: {j.started_at}", file=sys.stderr)
+                    elif prev_status != "RUNNING":  # Fallback to router time if no agent timestamp
+                        j.started_at = now_utc()
+                elif prev_status != "RUNNING" and not j.started_at:  # Fallback to router time
+                    j.started_at = now_utc()
+                
+                j.updated_at = now_utc(); s.commit()
         elif agent_resp.status_code == 404:
             print(f"[ROUTER DEBUG] Agent 404 for job {job_id}", file=sys.stderr)
             j.status = "FAILED"; j.rc = 127
@@ -564,14 +660,17 @@ def status(job_id: str):
 
     with Session() as s:
         j = s.get(Job, job_id)
-        print(f"[ROUTER DEBUG] Returning status for job {job_id}: status={j.status} rc={j.rc}", file=sys.stderr)
+        print(f"[ROUTER DEBUG] Returning status for job {job_id}: status={j.status} rc={j.rc} started_at={j.started_at} finished_at={j.finished_at}", file=sys.stderr)
         return {
             "job_id": j.job_id,
             "status": j.status,
             "rc": j.rc,
             "agent_id": j.agent_id,
             "log_path": j.log_path,
-            "note": j.note
+            "note": j.note,
+            "started_at": j.started_at.isoformat() if j.started_at else None,
+            "finished_at": j.finished_at.isoformat() if j.finished_at else None,
+            "execution_time": format_execution_time(j.started_at, j.finished_at),
         }
 
 @app.get("/logs/<job_id>")
@@ -641,6 +740,9 @@ def list_jobs():
                 "log_path": j.log_path,
                 "created_at": j.created_at.isoformat() if j.created_at else None,
                 "updated_at": j.updated_at.isoformat() if j.updated_at else None,
+                "started_at": j.started_at.isoformat() if j.started_at else None,
+                "finished_at": j.finished_at.isoformat() if j.finished_at else None,
+                "execution_time": format_execution_time(j.started_at, j.finished_at),
             })
     return {"jobs": out}
 

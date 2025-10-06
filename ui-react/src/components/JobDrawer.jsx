@@ -1,6 +1,38 @@
 import React, { useState, useEffect, useRef, memo } from 'react';
 import { fetchJSON, API_BASE, fmtDate, fmtAgo, getAuthHeaders } from '../utils/api';
 
+// Utility function to format execution time duration
+const formatExecutionTime = (startedAt, finishedAt, serverExecutionTime) => {
+  // Use server-provided execution_time if available
+  if (serverExecutionTime && serverExecutionTime !== '-') {
+    return serverExecutionTime;
+  }
+  
+  if (!startedAt) return 'Not started';
+  
+  const start = new Date(startedAt);
+  const end = finishedAt ? new Date(finishedAt) : new Date();
+  const diffMs = end - start;
+  
+  // Handle zero or near-zero duration properly
+  if (diffMs < 0) return '0s'; // Changed from 'Invalid time' to '0s'
+  
+  const seconds = Math.floor(diffMs / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  if (days > 0) {
+    return `${days}d ${hours % 24}h ${minutes % 60}m`;
+  } else if (hours > 0) {
+    return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`;
+  } else {
+    return `${seconds}s`;
+  }
+};
+
 const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
   const [jobDetails, setJobDetails] = useState(null);
   const [logs, setLogs] = useState('');
@@ -210,6 +242,27 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
                     <div className="flex items-center gap-2">
                       <span className="form-label text-body-large font-semibold min-w-[80px]">RC:</span>
                       <span className="text-mono-large bg-gray-100 px-2 py-1 rounded">{combinedJob.rc ?? "-"}</span>
+                    </div>
+                    <div>
+                      <span className="form-label text-body-large font-semibold">Execution Time:</span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-body-large font-medium text-slate-700">
+                          {formatExecutionTime(combinedJob.started_at, combinedJob.finished_at, combinedJob.execution_time)}
+                        </span>
+                        {combinedJob.status === 'RUNNING' && combinedJob.started_at && (
+                          <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full font-medium animate-pulse">
+                            Currently Running
+                          </span>
+                        )}
+                      </div>
+                      {combinedJob.started_at && (
+                        <div className="text-secondary text-body mt-1">
+                          <span>Started: {fmtDate(combinedJob.started_at, timezone)} · {fmtAgo(combinedJob.started_at)}</span>
+                          {combinedJob.finished_at && (
+                            <span className="block">Finished: {fmtDate(combinedJob.finished_at, timezone)} · {fmtAgo(combinedJob.finished_at)}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <span className="form-label text-body-large font-semibold">Created:</span>

@@ -10,6 +10,8 @@ class Job(Base):
     status = Column(String, default="QUEUED")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)  # When job execution starts
+    finished_at = Column(DateTime, nullable=True)  # When job execution completes
     labels = Column(JSON)
     priority = Column(Integer, default=5)
     payload = Column(JSON)

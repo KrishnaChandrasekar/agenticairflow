@@ -221,7 +221,357 @@ The UI provides:
 - **Agent management** including registration/deregistration
 - **Professional design** with modern typography and responsive layout
 
-## 8. Customization
+## 8. Label-Based Job Routing
+
+The Agentic system provides sophisticated label-based job routing to target specific agents based on their capabilities, environment, or custom attributes.
+
+### Label System Overview
+
+**Agents register with labels** describing their capabilities:
+```json
+{
+  "os": "linux",
+  "zone": "production", 
+  "gpu": "nvidia-a100",
+  "memory": "high",
+  "region": "us-west-2"
+}
+```
+
+**Jobs specify routing labels** to target agents with matching capabilities:
+```json
+{
+  "zone": "production",
+  "gpu": "nvidia-a100"
+}
+```
+
+### Current System Labels
+
+The demo environment provides these pre-configured agent labels:
+
+| Agent | Labels |
+|-------|--------|
+| `vm1`, `vm2` | `{"os": "linux", "zone": "dev"}` |
+| `vm3`, `vm4` | `{"os": "linux", "zone": "qa"}` |  
+| `go_vm1`, `go_vm2` | `{"os": "linux", "zone": "go"}` |
+
+### Label Usage Scenarios
+
+#### 1. Environment-Based Routing
+
+**Development Environment Jobs:**
+```bash
+# Target development zone agents
+curl -X POST "http://localhost:8000/submit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer router-secret" \
+  -d '{
+    "job": {
+      "command": "npm test && npm run dev-deploy",
+      "name": "Development Deployment"
+    },
+    "route": {
+      "labels": {"zone": "dev"}
+    }
+  }'
+```
+
+**Production Deployment:**
+```bash
+# Target production environment (requires custom labels)
+curl -X POST "http://localhost:8000/submit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer router-secret" \
+  -d '{
+    "job": {
+      "command": "kubectl apply -f production.yaml",
+      "name": "Production Deployment"
+    },
+    "route": {
+      "labels": {"zone": "production", "os": "linux"}
+    }
+  }'
+```
+
+#### 2. Technology Stack Routing
+
+**Go Language Jobs:**
+```bash
+# Target Go-enabled agents
+curl -X POST "http://localhost:8000/submit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer router-secret" \
+  -d '{
+    "job": {
+      "command": "go build -o myapp ./cmd && ./myapp --migrate",
+      "name": "Go Application Build"
+    },
+    "route": {
+      "labels": {"zone": "go"}
+    }
+  }'
+```
+
+**Python/Data Science Jobs:**
+```bash
+# Target agents with Python ML capabilities (custom labels)
+curl -X POST "http://localhost:8000/submit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer router-secret" \
+  -d '{
+    "job": {
+      "command": "python train_model.py --dataset large --epochs 100",
+      "name": "ML Model Training"
+    },
+    "route": {
+      "labels": {"python": "ml", "gpu": "nvidia", "memory": "high"}
+    }
+  }'
+```
+
+#### 3. Resource-Based Routing
+
+**High-Memory Jobs:**
+```bash
+# Target high-memory agents (requires custom labels)
+curl -X POST "http://localhost:8000/submit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer router-secret" \
+  -d '{
+    "job": {
+      "command": "java -Xmx32G -jar data-processor.jar --input huge-dataset.csv",
+      "name": "Large Dataset Processing"
+    },
+    "route": {
+      "labels": {"memory": "high", "os": "linux"}
+    }
+  }'
+```
+
+**GPU-Accelerated Jobs:**
+```bash
+# Target GPU-enabled agents (custom labels)
+curl -X POST "http://localhost:8000/submit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer router-secret" \
+  -d '{
+    "job": {
+      "command": "python train_neural_network.py --use-gpu --batch-size 1024",
+      "name": "GPU Neural Network Training"
+    },
+    "route": {
+      "labels": {"gpu": "nvidia", "cuda": "11.8"}
+    }
+  }'
+```
+
+#### 4. Geographic/Regional Routing
+
+**Multi-Region Deployment:**
+```bash
+# US West deployment (custom labels)
+curl -X POST "http://localhost:8000/submit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer router-secret" \
+  -d '{
+    "job": {
+      "command": "kubectl --context us-west apply -f service.yaml",
+      "name": "US West Deployment"
+    },
+    "route": {
+      "labels": {"region": "us-west", "cloud": "aws"}
+    }
+  }'
+
+# EU deployment (custom labels)  
+curl -X POST "http://localhost:8000/submit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer router-secret" \
+  -d '{
+    "job": {
+      "command": "kubectl --context eu-central apply -f service.yaml",
+      "name": "EU Central Deployment"
+    },
+    "route": {
+      "labels": {"region": "eu-central", "cloud": "aws"}
+    }
+  }'
+```
+
+#### 5. Testing & QA Scenarios
+
+**Quality Assurance Testing:**
+```bash
+# Target QA environment
+curl -X POST "http://localhost:8000/submit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer router-secret" \
+  -d '{
+    "job": {
+      "command": "pytest --cov=src tests/ && generate-qa-report.sh",
+      "name": "QA Test Suite"
+    },
+    "route": {
+      "labels": {"zone": "qa"}
+    }
+  }'
+```
+
+**Load Testing:**
+```bash
+# Target performance testing agents (custom labels)
+curl -X POST "http://localhost:8000/submit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer router-secret" \
+  -d '{
+    "job": {
+      "command": "k6 run --vus 1000 --duration 10m load-test.js",
+      "name": "Load Testing"
+    },
+    "route": {
+      "labels": {"testing": "performance", "bandwidth": "high"}
+    }
+  }'
+```
+
+### Using Labels via UI
+
+1. **Open UI**: Navigate to [http://localhost:8090](http://localhost:8090)
+2. **Submit Job**: Click "Submit Job" button
+3. **Select Routing**: Choose "(Any agent via labels)" from agent dropdown
+4. **Enter Labels**: In the "Labels (JSON)" field, enter:
+   ```json
+   {"zone": "dev", "os": "linux"}
+   ```
+5. **Add Command**: Enter your command and click Submit
+
+### Airflow DAG Integration
+
+Use labels in Airflow DAGs with the `AgenticRunOperator`:
+
+```python
+from airflow import DAG
+from datetime import datetime
+from plugins.agentic_ssh import AgenticRunOperator
+
+dag = DAG(
+    'label_routing_demo',
+    start_date=datetime(2025, 1, 1),
+    schedule_interval=None,
+    catchup=False
+)
+
+# Development environment task
+dev_task = AgenticRunOperator(
+    task_id='run_on_dev',
+    command='echo "Running on development environment"',
+    route_labels={'zone': 'dev'},
+    dag=dag
+)
+
+# QA environment task  
+qa_task = AgenticRunOperator(
+    task_id='run_on_qa', 
+    command='python run_tests.py --environment qa',
+    route_labels={'zone': 'qa'},
+    dag=dag
+)
+
+# Go environment task
+go_task = AgenticRunOperator(
+    task_id='run_on_go',
+    command='go test ./... && go build',
+    route_labels={'zone': 'go'},
+    dag=dag
+)
+
+dev_task >> qa_task >> go_task
+```
+
+### Custom Label Setup
+
+To add custom labels to agents, modify their registration:
+
+```bash
+# Register agent with custom labels
+curl -X POST "http://localhost:8000/agents/register" \
+  -H "Content-Type: application/json" \
+  -H "X-Agent-Token: agent-secret" \
+  -d '{
+    "agent_id": "gpu_agent_1",
+    "url": "http://gpu-server:8001", 
+    "labels": {
+      "os": "linux",
+      "gpu": "nvidia-a100",
+      "cuda": "11.8",
+      "memory": "high",
+      "zone": "ml-training",
+      "region": "us-west-2"
+    }
+  }'
+```
+
+### Label Matching Rules
+
+- **Exact Match Required**: All job labels must exactly match agent labels
+- **Subset Matching**: Jobs can specify subset of agent labels
+- **Agent Extras OK**: Agents can have additional labels not specified by job
+- **Empty Labels**: `{}` matches any available agent
+- **No Match**: Job fails with "no suitable agent" error
+
+### Best Practices
+
+1. **Hierarchical Labeling**: Use consistent naming (`zone`, `environment`, `capability`)
+2. **Standardized Values**: Use standard values (`dev`/`qa`/`prod`, not `development`/`testing`/`production`)
+3. **Capability Labels**: Include technical capabilities (`gpu`, `memory`, `storage`)  
+4. **Location Labels**: Add geographic/network location (`region`, `datacenter`)
+5. **Fallback Strategy**: Always have agents with minimal labels for general jobs
+
+### Quick Reference
+
+| Scenario | Job Labels | Agent Requirements |
+|----------|------------|-------------------|
+| Any agent | `{}` | Any active agent |
+| Development | `{"zone": "dev"}` | Agent with `zone: "dev"` |
+| QA Testing | `{"zone": "qa"}` | Agent with `zone: "qa"` |
+| Go Projects | `{"zone": "go"}` | Agent with `zone: "go"` |
+| High Memory | `{"memory": "high"}` | Agent with `memory: "high"` |
+| GPU Tasks | `{"gpu": "nvidia"}` | Agent with `gpu: "nvidia"` |
+| Multi-label | `{"zone": "prod", "gpu": "nvidia"}` | Agent with both labels |
+
+### Troubleshooting Labels
+
+**"No suitable agent" Error:**
+```bash
+# Check available agents and their labels
+curl -s "http://localhost:8000/agents" -H "Authorization: Bearer router-secret" | jq '.agents[] | {agent_id, active, labels}'
+
+# Verify job labels match available agent labels exactly
+```
+
+**Job Not Routing as Expected:**
+```bash
+# Test label matching with simple job
+curl -X POST "http://localhost:8000/submit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer router-secret" \
+  -d '{
+    "job": {"command": "echo \"Testing: $(hostname)\""},
+    "route": {"labels": {"zone": "dev"}}
+  }'
+
+# Check job assignment
+curl -s "http://localhost:8000/jobs?limit=1" -H "Authorization: Bearer router-secret" | jq '.jobs[0] | {job_id, agent_id, labels}'
+```
+
+**View Agent Registration:**
+```bash
+# Check which agents are registered and active
+curl -s "http://localhost:8000/agents?active=true" -H "Authorization: Bearer router-secret"
+```
+
+## 9. Customization
 
 - Add a second Agent: duplicate the `agent_vm1` block in `docker-compose.yml` with `hostname: vm2.local`, change ports to avoid conflicts, and run a second task with `route_labels={"host":"vm2.local"}`.
 - Change Airflow credentials: edit the `airflow-init` command in the compose file.

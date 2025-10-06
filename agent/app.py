@@ -254,10 +254,15 @@ def run():
 
 
 
-    # Build robust, POSIX-compliant detachment command (Go agent style)
-    safe_cmd = cmd.replace("'", "'\\''")
-    core = f"( cd {shlex.quote(home)} || exit 255; sh -c '{safe_cmd}'; echo $? > {shlex.quote(rcp)} )"
-    launch = f"setsid nohup sh -c \"{core}\" >> {shlex.quote(logp)} 2>&1 & echo $! > {shlex.quote(pidp)}"
+    # Build robust, POSIX-compliant detachment command (without setsid dependency)
+    start_time_file = os.path.join(home, "started_at")
+    finish_time_file = os.path.join(home, "finished_at")
+    
+    # Record start timestamp and run command, then record finish timestamp  
+    # Use Unix timestamp to avoid quoting issues, convert to readable format later
+    # Fix: Use shlex.quote for the entire command to avoid nested quote issues
+    core = f"cd {shlex.quote(home)} || exit 255; date -u +%s > {shlex.quote(start_time_file)}; {cmd}; RC=$?; echo $RC > {shlex.quote(rcp)}; date -u +%s > {shlex.quote(finish_time_file)}; exit $RC"
+    launch = f"nohup bash -c {shlex.quote(core)} >> {shlex.quote(logp)} 2>&1 & echo $! > {shlex.quote(pidp)}"
     if run_as:
         launch = f"sudo -u {shlex.quote(run_as)} {launch}"
 
@@ -296,6 +301,8 @@ def status(job_id: str):
     pidp = os.path.join(home, "pid")
     rcp = os.path.join(home, "rc")
     logp = os.path.join(home, "run.log")
+    start_time_file = os.path.join(home, "started_at")
+    finish_time_file = os.path.join(home, "finished_at")
 
     pid: Optional[int] = None
     if os.path.exists(pidp):
@@ -315,6 +322,19 @@ def status(job_id: str):
     def _write_status(val):
         with open(statusp, "w", encoding="utf-8", errors="ignore") as f:
             f.write(val)
+            
+    def _read_timestamp(filepath):
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                unix_ts = f.read().strip()
+                if unix_ts:
+                    # Convert Unix timestamp to YYYY-MM-DD HH:MM:SS format
+                    import datetime
+                    dt = datetime.datetime.fromtimestamp(int(unix_ts), tz=datetime.timezone.utc)
+                    return dt.strftime('%Y-%m-%d %H:%M:%S')
+                return None
+        except Exception:
+            return None
 
     if os.path.exists(rcp):
         try:
@@ -325,14 +345,29 @@ def status(job_id: str):
         if _last_status() != status_val:
             _writeln(logp, f"[agent] status={status_val}\n")
             _write_status(status_val)
-        return jsonify({"status": status_val, "job_id": job_id, "log_path": logp, "rc": rc})
+        
+        # Include timing data
+        response = {"status": status_val, "job_id": job_id, "log_path": logp, "rc": rc}
+        started_at = _read_timestamp(start_time_file)
+        finished_at = _read_timestamp(finish_time_file)
+        if started_at:
+            response["started_at"] = started_at
+        if finished_at:
+            response["finished_at"] = finished_at
+        return jsonify(response)
 
     # If no rc yet, only then check pid/alive
     if pid and _alive(pid):
         if _last_status() != "RUNNING":
             _writeln(logp, f"[agent] status=RUNNING\n")
             _write_status("RUNNING")
-        return jsonify({"status": "RUNNING", "job_id": job_id, "log_path": logp, "rc": None})
+        
+        # Include start timing data for running job
+        response = {"status": "RUNNING", "job_id": job_id, "log_path": logp, "rc": None}
+        started_at = _read_timestamp(start_time_file)
+        if started_at:
+            response["started_at"] = started_at
+        return jsonify(response)
 
     # Neither pid nor rc present → consider it a failed spawn and surface that
     return jsonify(
