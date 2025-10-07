@@ -1,9 +1,9 @@
-import os, json, uuid, requests
+import os, json, uuid, requests, sys
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
-
 from flask import Flask, request, jsonify
+from flask_restx import Api, Resource, fields
 from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -25,6 +25,58 @@ def now_utc() -> datetime:
     # store naive UTC for compatibility with existing rows
     return datetime.utcnow()
 
+def format_execution_time(started_at, finished_at, job_status=None):
+    """Calculate and format execution time as human-readable string."""
+    if not started_at:
+        return "-"
+    
+    # Handle both datetime objects and timestamp strings for started_at
+    if isinstance(started_at, str):
+        try:
+            started_at = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+        except:
+            return "-"
+    
+    # For running jobs without finished_at, use current UTC time
+    if not finished_at:
+        # Only show running time if job is actually running
+        if job_status == "RUNNING":
+            finished_at = now_utc()
+        else:
+            return "-"
+    else:
+        # Handle datetime objects and timestamp strings for finished_at
+        if isinstance(finished_at, str):
+            try:
+                finished_at = datetime.fromisoformat(finished_at.replace('Z', '+00:00'))
+            except:
+                return "-"
+    
+    # Ensure both timestamps are timezone-naive UTC for proper comparison
+    if hasattr(started_at, 'tzinfo') and started_at.tzinfo is not None:
+        started_at = started_at.astimezone(timezone.utc).replace(tzinfo=None)
+    if hasattr(finished_at, 'tzinfo') and finished_at.tzinfo is not None:
+        finished_at = finished_at.astimezone(timezone.utc).replace(tzinfo=None)
+    
+    duration = finished_at - started_at
+    total_seconds = int(duration.total_seconds())
+    
+    # Ensure we don't show negative time (in case of clock skew)
+    if total_seconds < 0:
+        return "-"
+    
+    if total_seconds < 60:
+        return f"{total_seconds}s"
+    elif total_seconds < 3600:
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        return f"{minutes}m {seconds}s"
+    else:
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        return f"{hours}h {minutes}m {seconds}s"
+
 class Job(Base):
     __tablename__ = "jobs"
     job_id     = Column(String, primary_key=True)
@@ -38,6 +90,8 @@ class Job(Base):
     log_path   = Column(Text, nullable=True)
     created_at = Column(DateTime, default=now_utc)
     updated_at = Column(DateTime, default=now_utc, onupdate=now_utc)
+    started_at = Column(DateTime, nullable=True)   # When job execution starts
+    finished_at = Column(DateTime, nullable=True)  # When job execution completes
 
 class Agent(Base):
     __tablename__ = "agents"
@@ -50,9 +104,98 @@ class Agent(Base):
 Base.metadata.create_all(engine)
 
 # -----------------------------
-# App
+# App & Swagger Setup
 # -----------------------------
 app = Flask(__name__)
+
+# Initialize Flask-RESTX for Swagger (avoid root route conflicts)
+api = Api(
+    app,
+    version='1.0',
+    title='Agent Router API',
+    description='API for managing distributed job execution across agents',
+    doc='/swagger/',  # Swagger UI will be available at /swagger/
+    contact_email='support@agentic.dev',
+    add_specs=False,  # Disable automatic spec endpoint to avoid conflicts
+    authorizations={
+        'Bearer': {
+            'type': 'apiKey',
+            'in': 'header',
+            'name': 'Authorization',
+            'description': 'Bearer token for API authentication. Use: Bearer <router-secret>'
+        }
+    },
+    security='Bearer'
+)
+
+# Custom 404 handler to provide meaningful response for root endpoint
+@app.errorhandler(404)
+def not_found(error):
+    """Custom 404 handler that provides API information for root requests"""
+    # Check if the request is for the root path
+    if request.path == '/':
+        return jsonify({
+            "service": "Agent Router API",
+            "message": "Welcome to the Agent Router API",
+            "version": "1.0",
+            "documentation": "/swagger/",
+            "status": "/status",
+            "health": "/health",
+            "endpoints": {
+                "health": "/health",
+                "agents": "/agents", 
+                "jobs": "/jobs",
+                "submit": "/submit",
+                "status": "/status/<job_id>",
+                "logs": "/logs/<job_id>",
+                "router_status": "/status"
+            }
+        }), 200
+    
+    # For other 404s, return standard error
+    return jsonify({
+        "detail": f"404 Not Found: The requested URL {request.path} was not found on the server.",
+        "error": "not_found"
+    }), 404
+
+# Define API models for Swagger documentation
+agent_model = api.model('Agent', {
+    'agent_id': fields.String(required=True, description='Unique identifier for the agent'),
+    'url': fields.String(required=True, description='Agent endpoint URL (e.g., http://agent_vm1:8001)'),
+    'labels': fields.Raw(description='Key-value pairs for agent labels (JSON object)'),
+    'active': fields.Boolean(description='Whether the agent is registered and active'),
+    'last_heartbeat': fields.DateTime(description='Last heartbeat timestamp from agent')
+})
+
+job_model = api.model('Job', {
+    'job_id': fields.String(description='Unique identifier for the job'),
+    'status': fields.String(description='Job status: QUEUED, RUNNING, SUCCEEDED, or FAILED'),
+    'agent_id': fields.String(description='Agent executing this job'),
+    'rc': fields.Integer(description='Exit code (for completed jobs)'),
+    'priority': fields.Integer(description='Job priority (higher numbers = higher priority)'),
+    'note': fields.String(description='Additional notes or error messages'),
+    'labels': fields.Raw(description='Job labels for routing (JSON object)'),
+    'log_path': fields.String(description='Path to job logs on the agent'),
+    'created_at': fields.DateTime(description='Job creation timestamp'),
+    'updated_at': fields.DateTime(description='Last job update timestamp'),
+    'started_at': fields.DateTime(description='Job execution start timestamp'),
+    'finished_at': fields.DateTime(description='Job execution completion timestamp'),
+    'execution_time': fields.String(description='Human-readable execution duration (e.g., "2m 34s")')
+})
+
+job_submit_model = api.model('JobSubmit', {
+    'job': fields.Raw(required=True, description='Job specification (command, environment, etc.)'),
+    'route': fields.Nested(api.model('JobRoute', {
+        'agent_id': fields.String(description='Target specific agent by ID'),
+        'labels': fields.Raw(description='Route by agent labels (JSON object)')
+    }), description='Routing specification - either agent_id OR labels')
+})
+
+agent_register_model = api.model('AgentRegister', {
+    'agent_id': fields.String(required=True, description='Unique agent identifier'),
+    'url': fields.String(required=True, description='Agent endpoint URL'),
+    'labels': fields.Raw(description='Agent capability labels (JSON object)')
+})
 
 @app.errorhandler(Exception)
 def _json_errors(e):
@@ -65,7 +208,11 @@ def _json_errors(e):
 # CORS for the browser UI
 try:
     from flask_cors import CORS
-    CORS(app, resources={r"/*": {"origins": "*"}})
+    CORS(app, resources={r"/*": {
+        "origins": "*",
+        "allow_headers": ["Content-Type", "Authorization"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    }})
 except Exception:
     pass
 
@@ -122,6 +269,19 @@ def _coerce_json(value, default):
     except Exception:
         return default
 
+def parse_agent_timestamp(timestamp_str):
+    """Parse timestamp from agent (format: 'YYYY-MM-DD HH:MM:SS') to datetime object"""
+    if not timestamp_str:
+        print(f"[ROUTER DEBUG] parse_agent_timestamp: empty timestamp_str", file=sys.stderr)
+        return None
+    try:
+        result = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+        print(f"[ROUTER DEBUG] parse_agent_timestamp: '{timestamp_str}' -> {result}", file=sys.stderr)
+        return result
+    except Exception as e:
+        print(f"[ROUTER DEBUG] parse_agent_timestamp: failed to parse '{timestamp_str}': {e}", file=sys.stderr)
+        return None
+
 # -----------------------------
 # Endpoints
 # -----------------------------
@@ -140,9 +300,65 @@ def agents_deregister():
         a.active = False
         s.commit()
     return jsonify({"ok": True, "agent_id": agent_id})
-@app.get("/health")
-def health():
-    return jsonify({"ok": True, "db": True})
+@api.route('/health')
+class Health(Resource):
+    @api.doc('health_check')
+    @api.marshal_with(api.model('Health', {
+        'ok': fields.Boolean(description='Service health status'),
+        'db': fields.Boolean(description='Database connectivity status')
+    }))
+    def get(self):
+        """Health check endpoint"""
+        return {"ok": True, "db": True}
+
+@app.route('/status')
+def router_status():
+    """Router status and API information"""
+    try:
+        # Get agent statistics
+        with Session() as s:
+            total_agents = s.query(Agent).count()
+            active_agents = s.query(Agent).filter(Agent.active == True).count()
+            
+            # Get job statistics
+            total_jobs = s.query(Job).count()
+            running_jobs = s.query(Job).filter(Job.status == 'RUNNING').count()
+            completed_jobs = s.query(Job).filter(Job.status.in_(['SUCCEEDED', 'FAILED'])).count()
+        
+        db_status = "connected"
+    except Exception:
+        total_agents = active_agents = 0
+        total_jobs = running_jobs = completed_jobs = 0
+        db_status = "error"
+    
+    return jsonify({
+        "service": "Agent Router API",
+        "version": "1.0",
+        "status": "running",
+        "database": db_status,
+        "endpoints": {
+            "health": "/health",
+            "agents": "/agents",
+            "jobs": "/jobs", 
+            "submit": "/submit",
+            "status_job": "/status/<job_id>",
+            "logs": "/logs/<job_id>",
+            "swagger": "/swagger/",
+            "router_status": "/status"
+        },
+        "agents": {
+            "total": total_agents,
+            "active": active_agents,
+            "inactive": total_agents - active_agents
+        },
+        "jobs": {
+            "total": total_jobs,
+            "running": running_jobs,
+            "completed": completed_jobs
+        }
+    })
+
+# Root endpoint is now handled by Flask route above
 
 
 @app.post("/agents/hello")
@@ -206,33 +422,39 @@ def _agents_filtered(active=None):
             out.append(_serialize_agent(a))
     return jsonify({"agents": out})
 
-@app.get("/agents")
-
-@app.get("/agents/registered")
-@app.get("/agents")
-
-@app.get("/agents/registered")
-def agents_registered():
-    if not auth_ok(request):
-        return jsonify({"error":"unauthorized"}), 401
-    # Filters: /agents?state=registered|discovered or /agents?active=true|false
-    state = (request.args.get("state") or "").lower().strip()
-    active_param = request.args.get("active")
-    active = None
-    if state in ("registered", "active", "enabled"):
-        active = True
-    elif state in ("discovered", "inactive", "disabled"):
-        active = False
-    elif active_param is not None:
-        active = str(active_param).lower() in ("1","true","yes","y")
-    if active is not None:
-        return _agents_filtered(active=active)
-    # default: return all
-    out = []
-    with Session() as s:
-        for a in s.query(Agent).order_by(Agent.last_heartbeat.desc()).all():
-            out.append(_serialize_agent(a))
-    return jsonify({"agents": out})
+@api.route('/agents')
+class AgentList(Resource):
+    @api.doc('list_agents', security='Bearer')
+    @api.param('state', 'Filter by agent state: registered, discovered', type='string')
+    @api.param('active', 'Filter by active status: true, false', type='boolean')
+    @api.marshal_with(api.model('AgentListResponse', {
+        'agents': fields.List(fields.Nested(agent_model))
+    }))
+    def get(self):
+        """List all agents with optional filtering"""
+        if not auth_ok(request):
+            api.abort(401, "Unauthorized")
+        
+        # Filters: /agents?state=registered|discovered or /agents?active=true|false
+        state = (request.args.get("state") or "").lower().strip()
+        active_param = request.args.get("active")
+        active = None
+        if state in ("registered", "active", "enabled"):
+            active = True
+        elif state in ("discovered", "inactive", "disabled"):
+            active = False
+        elif active_param is not None:
+            active = str(active_param).lower() in ("1","true","yes","y")
+        
+        if active is not None:
+            return _agents_filtered(active=active)
+        
+        # default: return all
+        out = []
+        with Session() as s:
+            for a in s.query(Agent).order_by(Agent.last_heartbeat.desc()).all():
+                out.append(_serialize_agent(a))
+        return {"agents": out}
 @app.get("/agents/discovered")
 def agents_discovered():
     if not auth_ok(request):
@@ -284,85 +506,28 @@ def agents_register():
     return jsonify({"ok": True, "agent_id": agent_id})
 
 @app.post("/submit")
+@api.doc('submit_job', security='Bearer')
+@api.expect(job_submit_model)
+@api.marshal_with(api.model('JobSubmitResponse', {
+    'job_id': fields.String(description='Unique job identifier'),
+    'status': fields.String(description='Initial job status'),
+    'rc': fields.Integer(description='Return code (if failed immediately)'),
+    'note': fields.String(description='Additional notes'),
+    'agent_id': fields.String(description='Assigned agent ID'),
+    'log_path': fields.String(description='Log file path on agent')
+}))
 def submit():
+    """Submit a new job for execution"""
     
-    # --- ENFORCE registered-only routing ---
-    payload = request.get_json(force=True) or {}
-    route = payload.get("route") or {}
-    target_agent_id = (route.get("agent_id") or "").strip()
-    desired_labels = route.get("labels") or {}
-
-    chosen = None
-    with Session() as s:
-        if target_agent_id:
-            a = s.get(Agent, target_agent_id)
-            if not a:
-                return jsonify({"error": "unknown agent"}), 404
-            if not a.active:
-                return jsonify({"error": "agent not registered"}), 403
-            chosen = a
-        else:
-            # consider only active agents for label matching
-            candidates = s.query(Agent).filter(Agent.active == True).all()  # noqa: E712
-            def labels_match(agent_row):
-                try:
-                    lbls = json.loads(agent_row.labels or "{}")
-                except Exception:
-                    lbls = {}
-                return all(lbls.get(k) == v for k, v in desired_labels.items())
-            matches = [a for a in candidates if labels_match(a)]
-            if not matches:
-                return jsonify({"error": "no active agent matches labels"}), 404
-            chosen = matches[0]
-
-        # Stamp chosen agent id into job/payload for downstream
-        job_spec = payload.get("job") or payload.get("payload") or {}
-        if not job_spec:
-            job_spec = payload
-        job_spec["agent_id"] = chosen.agent_id
-        # expose for code below if it needs it
-        __AGENTIC_ENFORCE_ACTIVE__ = True
-# --- ENFORCE: only registered (active) agents may be targeted ---
-    payload = request.get_json(force=True) or {}
-    route = payload.get("route") or {}
-    target_agent_id = (route.get("agent_id") or "").strip()
-    desired_labels = route.get("labels") or {}
-
-    chosen = None
-    with Session() as s:
-        if target_agent_id:
-            a = s.get(Agent, target_agent_id)
-            if not a:
-                return jsonify({"error": "unknown agent"}), 404
-            if not a.active:
-                return jsonify({"error": "agent not registered"}), 403
-            chosen = a
-        else:
-            candidates = s.query(Agent).filter(Agent.active == True).all()
-            def labels_match(agent_row):
-                try:
-                    lbls = json.loads(agent_row.labels or "{}")
-                except Exception:
-                    lbls = {}
-                return all(lbls.get(k) == v for k, v in desired_labels.items())
-            matches = [a for a in candidates if labels_match(a)]
-            if not matches:
-                return jsonify({"error": "no active agent matches labels"}), 404
-            chosen = matches[0]
-
-        job_spec = payload.get("job") or payload.get("payload") or {}
-        if not job_spec:
-            job_spec = payload
-        job_spec["agent_id"] = chosen.agent_id
-        __AGENTIC_PATCH_CONTINUE__ = True
-    # Accepts route.agent_id (direct target) OR route.labels (selector)
+    # Check authorization
     if not auth_ok(request):
-        return jsonify({"error":"unauthorized"}), 401
+        return {"error":"unauthorized"}, 401
 
     data = request.get_json(force=True) or {}
     job_spec = (data.get("job") or {})
     route    = (data.get("route") or {})
     labels   = (route.get("labels") or {})
+    target_agent_id = (route.get("agent_id") or "").strip()
 
     # Create job row
     jid = str(uuid.uuid4())
@@ -387,7 +552,7 @@ def submit():
                 j.status = "FAILED"; j.rc = 127
                 j.note = "agent not found or inactive"
                 j.updated_at = now_utc(); s.commit()
-                return jsonify({"job_id": jid, "status":"FAILED", "note":"agent not found or inactive"}), 400
+                return {"job_id": jid, "status":"FAILED", "note":"agent not found or inactive"}, 400
         else:
             agent = pick_agent_by_labels(s, labels)
             if not agent:
@@ -395,7 +560,7 @@ def submit():
                 j.status = "FAILED"; j.rc = 127
                 j.note = "no suitable agent"
                 j.updated_at = now_utc(); s.commit()
-                return jsonify({"job_id": jid, "status":"FAILED", "note":"no suitable agent"}), 200
+                return {"job_id": jid, "status":"FAILED", "note":"no suitable agent"}, 200
 
     # Dispatch
     try:
@@ -412,6 +577,7 @@ def submit():
                 j.status   = "RUNNING"
                 j.agent_id = agent.agent_id
                 j.log_path = out.get("log_path")
+                j.started_at = now_utc()  # Capture start time when job is dispatched successfully
                 j.updated_at = now_utc()
                 s.commit()
         else:
@@ -435,24 +601,38 @@ def submit():
     # Return current job row
     with Session() as s:
         j = s.get(Job, jid)
-        return jsonify({
+        return {
             "job_id": j.job_id,
             "status": j.status,
             "rc": j.rc,
             "note": j.note,
             "agent_id": j.agent_id,
             "log_path": j.log_path
-        })
+        }
 @app.get("/status/<job_id>")
+@api.doc('get_job_status', security='Bearer')
+@api.param('job_id', 'Job identifier', required=True)
+@api.marshal_with(api.model('JobStatusResponse', {
+    'job_id': fields.String(description='Job identifier'),
+    'status': fields.String(description='Current job status'),
+    'rc': fields.Integer(description='Exit code'),
+    'agent_id': fields.String(description='Agent executing the job'),
+    'log_path': fields.String(description='Path to job logs'),
+    'note': fields.String(description='Additional information'),
+    'started_at': fields.DateTime(description='Job execution start timestamp'),
+    'finished_at': fields.DateTime(description='Job execution completion timestamp'),
+    'execution_time': fields.String(description='Human-readable execution duration')
+}))
 def status(job_id: str):
+    """Get job status and details"""
     import sys
     if not auth_ok(request):
-        return jsonify({"error":"unauthorized"}), 401
+        return {"error":"unauthorized"}, 401
 
     with Session() as s:
         j = s.get(Job, job_id)
         if not j:
-            return jsonify({"error":"not found"}), 404
+            return {"error":"not found"}, 404
         agent = s.get(Agent, j.agent_id) if j.agent_id else None
 
     if not agent:
@@ -475,7 +655,10 @@ def status(job_id: str):
             print(f"[ROUTER DEBUG] No agent found for job {job_id}, returning DB status={j.status} rc={j.rc}", file=sys.stderr)
             return {
                 "job_id": j.job_id, "status": j.status, "rc": j.rc,
-                "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note
+                "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
+                "started_at": j.started_at.isoformat() if j.started_at else None,
+                "finished_at": j.finished_at.isoformat() if j.finished_at else None,
+                "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
             }
 
     try:
@@ -492,7 +675,10 @@ def status(job_id: str):
             print(f"[ROUTER DEBUG] Agent probe failed for job {job_id}, status={j.status} rc={j.rc}", file=sys.stderr)
             return {
                 "job_id": j.job_id, "status": j.status, "rc": j.rc,
-                "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note
+                "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
+                "started_at": j.started_at.isoformat() if j.started_at else None,
+                "finished_at": j.finished_at.isoformat() if j.finished_at else None,
+                "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
             }
 
     with Session() as s:
@@ -517,11 +703,47 @@ def status(job_id: str):
                 j.log_path = st.get("log_path", j.log_path)
                 if not j.agent_id:
                     j.agent_id = agent.agent_id
+                
+                # Use agent-provided timestamps if available
+                print(f"[ROUTER DEBUG] Processing timestamps for job {job_id}: agent started_at={st.get('started_at')}, finished_at={st.get('finished_at')}, current j.started_at={j.started_at}, j.finished_at={j.finished_at}", file=sys.stderr)
+                
+                if st.get("started_at"):
+                    agent_start_time = parse_agent_timestamp(st.get("started_at"))
+                    print(f"[ROUTER DEBUG] Parsed agent start time: {agent_start_time}", file=sys.stderr)
+                    if agent_start_time and not j.started_at:
+                        j.started_at = agent_start_time
+                        print(f"[ROUTER DEBUG] Set started_at from agent: {j.started_at}", file=sys.stderr)
+                
+                if st.get("finished_at"):
+                    agent_finish_time = parse_agent_timestamp(st.get("finished_at"))
+                    print(f"[ROUTER DEBUG] Parsed agent finish time: {agent_finish_time}", file=sys.stderr)
+                    if agent_finish_time and not j.finished_at:
+                        j.finished_at = agent_finish_time
+                        print(f"[ROUTER DEBUG] Set finished_at from agent: {j.finished_at}", file=sys.stderr)
+                    elif j.status != st["status"] and not j.finished_at:  # Fallback to router time if no agent timestamp
+                        j.finished_at = now_utc()
+                        print(f"[ROUTER DEBUG] Set finished_at to router time: {j.finished_at}", file=sys.stderr)
+                
                 j.updated_at = now_utc(); s.commit()
             elif st.get("status") == "RUNNING":
+                # Store previous status before updating
+                prev_status = j.status
+                j.status = "RUNNING"
                 if not j.agent_id:
                     j.agent_id = agent.agent_id
-                    j.updated_at = now_utc(); s.commit()
+                
+                # Use agent-provided start timestamp if available
+                if not j.started_at and st.get("started_at"):
+                    agent_start_time = parse_agent_timestamp(st.get("started_at"))
+                    if agent_start_time:
+                        j.started_at = agent_start_time
+                        print(f"[ROUTER DEBUG] Set started_at from agent: {j.started_at}", file=sys.stderr)
+                    elif prev_status != "RUNNING":  # Fallback to router time if no agent timestamp
+                        j.started_at = now_utc()
+                elif prev_status != "RUNNING" and not j.started_at:  # Fallback to router time
+                    j.started_at = now_utc()
+                
+                j.updated_at = now_utc(); s.commit()
         elif agent_resp.status_code == 404:
             print(f"[ROUTER DEBUG] Agent 404 for job {job_id}", file=sys.stderr)
             j.status = "FAILED"; j.rc = 127
@@ -535,15 +757,18 @@ def status(job_id: str):
 
     with Session() as s:
         j = s.get(Job, job_id)
-        print(f"[ROUTER DEBUG] Returning status for job {job_id}: status={j.status} rc={j.rc}", file=sys.stderr)
-        return jsonify({
+        print(f"[ROUTER DEBUG] Returning status for job {job_id}: status={j.status} rc={j.rc} started_at={j.started_at} finished_at={j.finished_at}", file=sys.stderr)
+        return {
             "job_id": j.job_id,
             "status": j.status,
             "rc": j.rc,
             "agent_id": j.agent_id,
             "log_path": j.log_path,
-            "note": j.note
-        })
+            "note": j.note,
+            "started_at": j.started_at.isoformat() if j.started_at else None,
+            "finished_at": j.finished_at.isoformat() if j.finished_at else None,
+            "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
+        }
 
 @app.get("/logs/<job_id>")
 def logs(job_id: str):
@@ -564,9 +789,18 @@ def logs(job_id: str):
         return jsonify({"error": f"proxy failed: {e}"}), 502
 
 @app.get("/jobs")
+@api.doc('list_jobs', security='Bearer')
+@api.param('limit', 'Maximum number of jobs to return', type='integer', default=200)
+@api.param('status', 'Filter by job status (comma-separated)', type='string')
+@api.param('agent_id', 'Filter by agent ID', type='string')
+@api.param('since_hours', 'Only jobs created in the last N hours', type='integer')
+@api.marshal_with(api.model('JobListResponse', {
+    'jobs': fields.List(fields.Nested(job_model))
+}))
 def list_jobs():
+    """List jobs with optional filtering"""
     if not auth_ok(request):
-        return jsonify({"error":"unauthorized"}), 401
+        return {"error":"unauthorized"}, 401
     # filters
     try:
         limit = int(request.args.get("limit", 200))
@@ -603,8 +837,11 @@ def list_jobs():
                 "log_path": j.log_path,
                 "created_at": j.created_at.isoformat() if j.created_at else None,
                 "updated_at": j.updated_at.isoformat() if j.updated_at else None,
+                "started_at": j.started_at.isoformat() if j.started_at else None,
+                "finished_at": j.finished_at.isoformat() if j.finished_at else None,
+                "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
             })
-    return jsonify({"jobs": out})
+    return {"jobs": out}
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
