@@ -19,6 +19,7 @@ from flask import Flask, jsonify, request, send_file
 def _reconcile_and_report():
     """
     On agent startup, scan all job directories, check status, and report to router.
+    Also cleanup any orphaned jobs that are stuck in RUNNING state.
     """
     try:
         jobs = []
@@ -31,19 +32,35 @@ def _reconcile_and_report():
             status = "UNKNOWN"
             pid = None
             rc = None
+            
             if os.path.exists(pidp):
                 try:
                     pid = int(open(pidp).read().strip())
                 except Exception:
                     pid = None
-            if pid and _alive(pid):
-                status = "RUNNING"
-            elif os.path.exists(rcp):
+            
+            # Check if job already completed
+            if os.path.exists(rcp):
                 try:
                     rc = int(open(rcp).read().strip())
                 except Exception:
                     rc = 1
                 status = "SUCCEEDED" if rc == 0 else "FAILED"
+            # Check if job is actually running (with enhanced validation)
+            elif pid and _alive(pid, job_id):
+                status = "RUNNING"
+            # Job has PID but process is not the original one or doesn't exist
+            elif pid:
+                # This is an orphaned job - cleanup and mark as FAILED
+                _cleanup_orphaned_job(job_id, "Container restart detected - original process no longer exists")
+                status = "FAILED"
+                rc = 130  # Set rc to indicate terminated by signal
+            # No PID file exists - job never started properly
+            else:
+                _cleanup_orphaned_job(job_id, "No PID file found - job never started properly")
+                status = "FAILED"
+                rc = 255  # Set rc to indicate startup failure
+                
             jobs.append({"job_id": job_id, "status": status, "pid": pid, "rc": rc})
 
         # Report to router
@@ -88,7 +105,11 @@ app = Flask(__name__)
 # =========================
 # Helpers
 # =========================
-def _alive(pid: int) -> bool:
+def _alive(pid: int, job_id: str = None) -> bool:
+    """
+    Check if a PID is alive and, if job_id is provided, verify it's the same process
+    that was originally started for this job (by comparing process start time).
+    """
     try:
         p = psutil.Process(pid)
         try:
@@ -96,6 +117,32 @@ def _alive(pid: int) -> bool:
                 return False
         except Exception:
             pass
+        
+        # If job_id is provided, validate this is the same process that was started
+        if job_id:
+            home = os.path.join(AGENT_HOME, job_id)
+            started_at_file = os.path.join(home, "started_at")
+            
+            if os.path.exists(started_at_file):
+                try:
+                    # Read job start time (Unix timestamp)
+                    with open(started_at_file, "r") as f:
+                        job_start_time = int(f.read().strip())
+                    
+                    # Get process start time
+                    process_start_time = int(p.create_time())
+                    
+                    # Allow some tolerance (5 seconds) for timing differences
+                    time_diff = abs(process_start_time - job_start_time)
+                    if time_diff > 5:
+                        print(f"[agent] PID {pid} for job {job_id} appears to be different process (time diff: {time_diff}s)", flush=True)
+                        return False
+                        
+                except Exception as e:
+                    print(f"[agent] Failed to validate PID {pid} for job {job_id}: {e}", flush=True)
+                    # If we can't validate, assume it's not the same process
+                    return False
+        
         return p.is_running()
     except Exception:
         return False
@@ -125,6 +172,37 @@ def _writeln(path: str, text: str, retries: int = 3):
 def _write_text(path: str, text: str):
     with open(path, "w", encoding="utf-8", errors="ignore") as f:
         f.write(text)
+
+
+def _cleanup_orphaned_job(job_id: str, reason: str = "Process no longer exists"):
+    """
+    Mark an orphaned job as FAILED and create the necessary completion files.
+    """
+    try:
+        home = os.path.join(AGENT_HOME, job_id)
+        logp = os.path.join(home, "run.log")
+        rcp = os.path.join(home, "rc")
+        finished_at_file = os.path.join(home, "finished_at")
+        statusp = os.path.join(home, "status.txt")
+        
+        # Write failure reason to log
+        _writeln(logp, f"[agent] Job marked as FAILED: {reason}\n")
+        _writeln(logp, f"[agent] status=FAILED\n")
+        
+        # Create rc file with error code
+        _write_text(rcp, "130")  # 130 = process terminated by signal
+        
+        # Create finished_at timestamp
+        current_time = str(int(time.time()))
+        _write_text(finished_at_file, current_time)
+        
+        # Update status file
+        _write_text(statusp, "FAILED")
+        
+        print(f"[agent] Cleaned up orphaned job {job_id}: {reason}", flush=True)
+        
+    except Exception as e:
+        print(f"[agent] Failed to cleanup orphaned job {job_id}: {e}", flush=True)
 
 
 def _auto_register_forever():
@@ -356,8 +434,8 @@ def status(job_id: str):
             response["finished_at"] = finished_at
         return jsonify(response)
 
-    # If no rc yet, only then check pid/alive
-    if pid and _alive(pid):
+    # If no rc yet, only then check pid/alive with job validation
+    if pid and _alive(pid, job_id):
         if _last_status() != "RUNNING":
             _writeln(logp, f"[agent] status=RUNNING\n")
             _write_status("RUNNING")
@@ -368,6 +446,26 @@ def status(job_id: str):
         if started_at:
             response["started_at"] = started_at
         return jsonify(response)
+    
+    # If we have a PID but process is not alive or not the same process, cleanup
+    elif pid:
+        _cleanup_orphaned_job(job_id, "Process validation failed - likely container restart")
+        # Re-read the rc file that was just created
+        if os.path.exists(rcp):
+            try:
+                rc = int(open(rcp, "r", encoding="utf-8", errors="ignore").read().strip())
+            except Exception:
+                rc = 130
+            status_val = "FAILED"
+            
+            response = {"status": status_val, "job_id": job_id, "log_path": logp, "rc": rc}
+            started_at = _read_timestamp(start_time_file)
+            finished_at = _read_timestamp(finish_time_file)
+            if started_at:
+                response["started_at"] = started_at
+            if finished_at:
+                response["finished_at"] = finished_at
+            return jsonify(response)
 
     # Neither pid nor rc present → consider it a failed spawn and surface that
     return jsonify(
