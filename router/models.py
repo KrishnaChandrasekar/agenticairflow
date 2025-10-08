@@ -19,6 +19,8 @@ class Job(Base):
     rc         = Column(Integer, nullable=True)
     note       = Column(Text, nullable=True)
     log_path   = Column(Text, nullable=True)
+    dag_id     = Column(String, nullable=True)      # DAG identifier
+    task_id    = Column(String, nullable=True)      # Task identifier
     created_at = Column(DateTime, default=now_utc)
     updated_at = Column(DateTime, default=now_utc, onupdate=now_utc)
     started_at = Column(DateTime, nullable=True)   # When job execution starts

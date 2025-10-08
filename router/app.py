@@ -524,25 +524,60 @@ def submit():
         return {"error":"unauthorized"}, 401
 
     data = request.get_json(force=True) or {}
+    # Debug: Log the received payload structure
+    print(f"[ROUTER DEBUG] Received payload: {json.dumps(data, indent=2)}", file=sys.stderr)
     job_spec = (data.get("job") or {})
     route    = (data.get("route") or {})
     labels   = (route.get("labels") or {})
     target_agent_id = (route.get("agent_id") or "").strip()
+    
+    # Determine job source and set appropriate job-type label
+    dag_id = job_spec.get("dag_id")
+    task_id = job_spec.get("task_id")
+    
+    # If dag_id and task_id are present, it's from Airflow
+    if dag_id and task_id:
+        labels = dict(labels)  # Make a copy to avoid modifying original
+        labels["job-type"] = "airflow"
+        print(f"[ROUTER DEBUG] Job from Airflow detected, setting job-type=airflow", file=sys.stderr)
+    elif not dag_id and not task_id:
+        # Job from Router UI "Test A Job" - this label is already set by the frontend
+        # but we can ensure it's set here too
+        labels = dict(labels)  # Make a copy to avoid modifying original
+        if "job-type" not in labels:
+            labels["job-type"] = "test"
+        print(f"[ROUTER DEBUG] Job from Router UI detected, setting job-type=test", file=sys.stderr)
 
     # Create job row
     jid = str(uuid.uuid4())
+    dag_id = job_spec.get("dag_id")
+    task_id = job_spec.get("task_id")
+    # Debug: Log what we extracted
+    print(f"[ROUTER DEBUG] Extracted from job_spec: dag_id='{dag_id}', task_id='{task_id}'", file=sys.stderr)
+    # For jobs from Router UI "Test A Job", set to "Not Applicable" instead of "-"
+    if not dag_id or dag_id == "":
+        dag_id = "Not Applicable"
+    if not task_id or task_id == "":
+        task_id = "Not Applicable"
+    print(f"[ROUTER DEBUG] Final values: dag_id='{dag_id}', task_id='{task_id}'", file=sys.stderr)
     with Session() as s:
         j = Job(
             job_id=jid,
             status="QUEUED",
-            labels=json.dumps(labels),
+            labels=json.dumps(labels),  # This now includes the job-type label
             payload=json.dumps(job_spec),
             priority=int(job_spec.get("priority", 5)),
+            dag_id=dag_id,
+            task_id=task_id,
             created_at=now_utc(),
             updated_at=now_utc(),
         )
         s.add(j); s.commit()
+        print(f"[ROUTER DEBUG] Job {jid} created with labels: {labels}", file=sys.stderr)
 
+        # dag_id and task_id are already correctly set from job_spec above
+        # No need for additional payload parsing since the values are directly available
+    
     # Choose agent
     with Session() as s:
         if target_agent_id:
@@ -552,17 +587,27 @@ def submit():
                 j.status = "FAILED"; j.rc = 127
                 j.note = "agent not found or inactive"
                 j.updated_at = now_utc(); s.commit()
+                print(f"[ROUTER DEBUG] Job {jid} failed: specific agent {target_agent_id} not found or inactive", file=sys.stderr)
                 return {"job_id": jid, "status":"FAILED", "note":"agent not found or inactive"}, 400
         else:
+            # For jobs without specific agent routing, try to find any active agent
             agent = pick_agent_by_labels(s, labels)
             if not agent:
-                j = s.get(Job, jid)
-                j.status = "FAILED"; j.rc = 127
-                j.note = "no suitable agent"
-                j.updated_at = now_utc(); s.commit()
-                return {"job_id": jid, "status":"FAILED", "note":"no suitable agent"}, 200
+                # If no agent matches labels, try to pick any active agent as fallback
+                fallback_agents = s.query(Agent).filter(Agent.active == True).all()
+                if fallback_agents:
+                    agent = fallback_agents[0]  # Pick the first active agent
+                    print(f"[ROUTER DEBUG] Job {jid} using fallback agent: {agent.agent_id}", file=sys.stderr)
+                else:
+                    j = s.get(Job, jid)
+                    j.status = "FAILED"; j.rc = 127
+                    j.note = "no suitable agent available"
+                    j.updated_at = now_utc(); s.commit()
+                    print(f"[ROUTER DEBUG] Job {jid} failed: no active agents available", file=sys.stderr)
+                    return {"job_id": jid, "status":"FAILED", "note":"no suitable agent available"}, 200
 
     # Dispatch
+    print(f"[ROUTER DEBUG] Dispatching job {jid} to agent {agent.agent_id} at {agent.url}", file=sys.stderr)
     try:
         r = requests.post(
             f"{agent.url.rstrip('/')}/run",
@@ -570,8 +615,10 @@ def submit():
             json={"job_id": jid, "payload": job_spec},
             timeout=15
         )
+        print(f"[ROUTER DEBUG] Agent response for job {jid}: HTTP {r.status_code}", file=sys.stderr)
         if r.status_code == 200:
             out = r.json()
+            print(f"[ROUTER DEBUG] Agent accepted job {jid}: {out}", file=sys.stderr)
             with Session() as s:
                 j = s.get(Job, jid)
                 j.status   = "RUNNING"
@@ -581,6 +628,7 @@ def submit():
                 j.updated_at = now_utc()
                 s.commit()
         else:
+            print(f"[ROUTER DEBUG] Agent rejected job {jid}: {r.text[:200]}", file=sys.stderr)
             with Session() as s:
                 j = s.get(Job, jid)
                 j.status = "FAILED"
@@ -590,6 +638,7 @@ def submit():
                 j.updated_at = now_utc()
                 s.commit()
     except Exception as e:
+        print(f"[ROUTER DEBUG] Dispatch exception for job {jid}: {e}", file=sys.stderr)
         with Session() as s:
             j = s.get(Job, jid)
             j.status = "FAILED"; j.rc = 255
@@ -619,6 +668,8 @@ def submit():
     'agent_id': fields.String(description='Agent executing the job'),
     'log_path': fields.String(description='Path to job logs'),
     'note': fields.String(description='Additional information'),
+    'dag_id': fields.String(description='DAG identifier (from Airflow) or "Not Applicable"'),
+    'task_id': fields.String(description='Task identifier (from Airflow) or "Not Applicable"'),
     'started_at': fields.DateTime(description='Job execution start timestamp'),
     'finished_at': fields.DateTime(description='Job execution completion timestamp'),
     'execution_time': fields.String(description='Human-readable execution duration')
@@ -635,6 +686,12 @@ def status(job_id: str):
             return {"error":"not found"}, 404
         agent = s.get(Agent, j.agent_id) if j.agent_id else None
 
+    # Handle jobs waiting for agent sync - try to reconnect if agent is back
+    if j.status == "PENDING_AGENT_SYNC" and agent and agent.active:
+        print(f"[ROUTER DEBUG] Retrying agent connection for job {job_id} in PENDING_AGENT_SYNC", file=sys.stderr)
+        # Agent is back online, try to get status again
+        # Continue with normal flow below
+    
     if not agent:
         # optional: probe all agents to locate job
         with Session() as s:
@@ -656,6 +713,8 @@ def status(job_id: str):
             return {
                 "job_id": j.job_id, "status": j.status, "rc": j.rc,
                 "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
+                "dag_id": j.dag_id,
+                "task_id": j.task_id,
                 "started_at": j.started_at.isoformat() if j.started_at else None,
                 "finished_at": j.finished_at.isoformat() if j.finished_at else None,
                 "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
@@ -667,15 +726,39 @@ def status(job_id: str):
     except Exception as e:
         with Session() as s:
             j = s.get(Job, job_id)
-            j.status = "FAILED"; j.rc = 255
-            j.note = f"agent status probe failed: {e}"
-            j.updated_at = now_utc(); s.commit()
+            # Don't mark as FAILED immediately - wait for agent to come back up
+            # Only mark as failed if job has been waiting too long (e.g., > 1 hour)
+            if j.status == "RUNNING" and j.started_at:
+                time_since_start = now_utc() - j.started_at
+                timeout_hours = 1  # Wait 1 hour before marking as failed
+                if time_since_start.total_seconds() > timeout_hours * 3600:
+                    j.status = "FAILED"; j.rc = 255
+                    j.note = f"agent timeout after {timeout_hours}h: {e}"
+                    j.finished_at = now_utc()
+                    j.updated_at = now_utc()
+                    s.commit()
+                    print(f"[ROUTER DEBUG] Job {job_id} marked as FAILED after timeout", file=sys.stderr)
+                else:
+                    j.status = "PENDING_AGENT_SYNC"
+                    j.note = f"waiting for agent reconnection: {e}"
+                    j.updated_at = now_utc()
+                    s.commit()
+                    print(f"[ROUTER DEBUG] Job {job_id} waiting for agent sync", file=sys.stderr)
+            else:
+                # For non-running jobs, mark as failed immediately
+                j.status = "FAILED"; j.rc = 255
+                j.note = f"agent status probe failed: {e}"
+                j.updated_at = now_utc()
+                s.commit()
+                
         with Session() as s:
             j = s.get(Job, job_id)
             print(f"[ROUTER DEBUG] Agent probe failed for job {job_id}, status={j.status} rc={j.rc}", file=sys.stderr)
             return {
                 "job_id": j.job_id, "status": j.status, "rc": j.rc,
                 "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
+                "dag_id": j.dag_id,
+                "task_id": j.task_id,
                 "started_at": j.started_at.isoformat() if j.started_at else None,
                 "finished_at": j.finished_at.isoformat() if j.finished_at else None,
                 "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
@@ -746,8 +829,21 @@ def status(job_id: str):
                 j.updated_at = now_utc(); s.commit()
         elif agent_resp.status_code == 404:
             print(f"[ROUTER DEBUG] Agent 404 for job {job_id}", file=sys.stderr)
-            j.status = "FAILED"; j.rc = 127
-            j.note = "agent reports unknown job (404)"
+            # Agent may have restarted and lost job info, but job might still be running
+            # Don't immediately fail, wait for agent to sync back
+            if j.status == "RUNNING" and j.started_at:
+                time_since_start = now_utc() - j.started_at
+                timeout_hours = 1  # Wait 1 hour before marking as failed
+                if time_since_start.total_seconds() > timeout_hours * 3600:
+                    j.status = "FAILED"; j.rc = 127
+                    j.note = f"agent lost job after {timeout_hours}h (404)"
+                    j.finished_at = now_utc()
+                else:
+                    j.status = "PENDING_AGENT_SYNC"
+                    j.note = "agent reports unknown job - waiting for sync"
+            else:
+                j.status = "FAILED"; j.rc = 127
+                j.note = "agent reports unknown job (404)"
             j.updated_at = now_utc(); s.commit()
         elif agent_resp.status_code == 401:
             print(f"[ROUTER DEBUG] Agent 401 for job {job_id}", file=sys.stderr)
@@ -757,7 +853,7 @@ def status(job_id: str):
 
     with Session() as s:
         j = s.get(Job, job_id)
-        print(f"[ROUTER DEBUG] Returning status for job {job_id}: status={j.status} rc={j.rc} started_at={j.started_at} finished_at={j.finished_at}", file=sys.stderr)
+        print(f"[ROUTER DEBUG] Returning status for job {job_id}: status={j.status} rc={j.rc} dag_id={j.dag_id} task_id={j.task_id}", file=sys.stderr)
         return {
             "job_id": j.job_id,
             "status": j.status,
@@ -765,6 +861,8 @@ def status(job_id: str):
             "agent_id": j.agent_id,
             "log_path": j.log_path,
             "note": j.note,
+            "dag_id": j.dag_id,
+            "task_id": j.task_id,
             "started_at": j.started_at.isoformat() if j.started_at else None,
             "finished_at": j.finished_at.isoformat() if j.finished_at else None,
             "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
@@ -835,6 +933,8 @@ def list_jobs():
                 "note": j.note,
                 "labels": _coerce_json(getattr(j,"labels",None), {}),
                 "log_path": j.log_path,
+                "dag_id": j.dag_id,
+                "task_id": j.task_id,
                 "created_at": j.created_at.isoformat() if j.created_at else None,
                 "updated_at": j.updated_at.isoformat() if j.updated_at else None,
                 "started_at": j.started_at.isoformat() if j.started_at else None,

@@ -167,18 +167,18 @@ export const useJobs = (autoRefresh = true, refreshInterval = 2000) => {
       let processedJobs = arr.map(x => {
         const job_id = x.job_id || x.id || "";
         let labels = x.labels || {};
-        
         // If job_id matches a test job, force label
         if (testJobIds.includes(job_id)) {
           labels = { ...labels, "job-type": "test" };
         }
-        
         return {
           job_id,
           status: (x.status || "").toUpperCase(),
           agent_id: x.agent_id || "",
           rc: (x.rc !== undefined ? x.rc : null),
           log_path: x.log_path || "",
+          dag_id: x.dag_id || "",
+          task_id: x.task_id || "",
           created_at: x.created_at || x.createdAt || null,
           updated_at: x.updated_at || x.updatedAt || null,
           started_at: x.started_at || null,
