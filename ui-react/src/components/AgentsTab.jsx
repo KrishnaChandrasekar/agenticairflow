@@ -623,7 +623,7 @@ const AgentsTab = ({
                   <input 
                     value={filters.agent_id}
                     onChange={(e) => handleFilterChange('agent_id', e.target.value)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" 
+                    className="border border-blue-200 rounded-lg pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md text-left" 
                     placeholder="Filter agent ID" 
                   />
                 </div>
@@ -638,7 +638,7 @@ const AgentsTab = ({
                   <input 
                     value={filters.url}
                     onChange={(e) => handleFilterChange('url', e.target.value)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" 
+                    className="border border-blue-200 rounded-lg pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md text-left" 
                     placeholder="Filter URL" 
                   />
                 </div>
@@ -653,7 +653,7 @@ const AgentsTab = ({
                   <input 
                     value={filters.labels}
                     onChange={(e) => handleFilterChange('labels', e.target.value)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" 
+                    className="border border-blue-200 rounded-lg pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md text-left" 
                     placeholder="key or 'k:v'" 
                   />
                 </div>

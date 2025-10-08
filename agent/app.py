@@ -476,7 +476,7 @@ def run():
     # Use Unix timestamp to avoid quoting issues, convert to readable format later
     # Fix: Use shlex.quote for the entire command to avoid nested quote issues
     core = f"cd {shlex.quote(home)} || exit 255; date -u +%s > {shlex.quote(start_time_file)}; {cmd}; RC=$?; echo $RC > {shlex.quote(rcp)}; date -u +%s > {shlex.quote(finish_time_file)}; exit $RC"
-    launch = f"nohup bash -c {shlex.quote(core)} >> {shlex.quote(logp)} 2>&1 & echo $! > {shlex.quote(pidp)}"
+    launch = f"setsid nohup bash -c {shlex.quote(core)} >> {shlex.quote(logp)} 2>&1 & echo $! > {shlex.quote(pidp)}"
     if run_as:
         launch = f"sudo -u {shlex.quote(run_as)} {launch}"
 
