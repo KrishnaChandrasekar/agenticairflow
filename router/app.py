@@ -4,8 +4,10 @@ from typing import Dict, Any, Optional
 
 from flask import Flask, request, jsonify
 from flask_restx import Api, Resource, fields
-from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, Boolean
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from models import Base, Job, Agent, now_utc
 
 # -----------------------------
 # Config
@@ -17,13 +19,8 @@ AGENT_TOKEN  = os.environ.get("AGENT_TOKEN",  "agent-secret")
 # -----------------------------
 # DB setup
 # -----------------------------
-Base = declarative_base()
 engine = create_engine(DATABASE_URL, echo=False, future=True)
 Session = sessionmaker(bind=engine, expire_on_commit=False)
-
-def now_utc() -> datetime:
-    # store naive UTC for compatibility with existing rows
-    return datetime.utcnow()
 
 def format_execution_time(started_at, finished_at, job_status=None):
     """Calculate and format execution time as human-readable string."""
@@ -41,7 +38,7 @@ def format_execution_time(started_at, finished_at, job_status=None):
     if not finished_at:
         # Only show running time if job is actually running
         if job_status == "RUNNING":
-            finished_at = now_utc()
+            finished_at = datetime.utcnow()
         else:
             return "-"
     else:
@@ -76,30 +73,6 @@ def format_execution_time(started_at, finished_at, job_status=None):
         minutes = (total_seconds % 3600) // 60
         seconds = total_seconds % 60
         return f"{hours}h {minutes}m {seconds}s"
-
-class Job(Base):
-    __tablename__ = "jobs"
-    job_id     = Column(String, primary_key=True)
-    status     = Column(String, default="QUEUED")  # QUEUED | RUNNING | SUCCEEDED | FAILED
-    agent_id   = Column(String, nullable=True)
-    labels     = Column(Text, nullable=True)       # JSON string
-    payload    = Column(Text, nullable=True)       # JSON string (job spec)
-    priority   = Column(Integer, default=5)
-    rc         = Column(Integer, nullable=True)
-    note       = Column(Text, nullable=True)
-    log_path   = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=now_utc)
-    updated_at = Column(DateTime, default=now_utc, onupdate=now_utc)
-    started_at = Column(DateTime, nullable=True)   # When job execution starts
-    finished_at = Column(DateTime, nullable=True)  # When job execution completes
-
-class Agent(Base):
-    __tablename__ = "agents"
-    agent_id   = Column(String, primary_key=True)
-    url        = Column(Text, nullable=False)      # e.g. http://agent_vm1:8001
-    labels     = Column(Text, nullable=True)       # JSON string
-    active     = Column(Boolean, default=True)
-    last_heartbeat = Column(DateTime, default=now_utc, onupdate=now_utc)
 
 Base.metadata.create_all(engine)
 
@@ -373,8 +346,17 @@ def agents_hello():
     with Session() as s:
         a = s.get(Agent, agent_id)
         if not a:
-            a = Agent(agent_id=agent_id, url=url, active=False)
-            s.add(a)
+            try:
+                a = Agent(agent_id=agent_id, url=url, active=False)
+                s.add(a)
+                s.flush()  # Flush to detect conflicts before final commit
+            except Exception:
+                # Handle race condition: agent was created by another process
+                s.rollback()
+                a = s.get(Agent, agent_id)
+                if not a:
+                    # Still not found, re-raise the original error
+                    raise
         a.url = url
         try:
             a.labels = json.dumps(labels)
@@ -393,8 +375,17 @@ def agents_heartbeat():
     with Session() as s:
         a = s.get(Agent, agent_id)
         if not a:
-            a = Agent(agent_id=agent_id, url=data.get("url") or "", active=False)
-            s.add(a)
+            try:
+                a = Agent(agent_id=agent_id, url=data.get("url") or "", active=False)
+                s.add(a)
+                s.flush()  # Flush to detect conflicts before final commit
+            except Exception:
+                # Handle race condition: agent was created by another process
+                s.rollback()
+                a = s.get(Agent, agent_id)
+                if not a:
+                    # Still not found, re-raise the original error
+                    raise
         a.last_heartbeat = now_utc()
         s.commit()
     return jsonify({"ok": True, "ts": now_utc().isoformat()})
@@ -496,12 +487,21 @@ def agents_register():
     with Session() as s:
         a = s.get(Agent, agent_id)
         if not a:
-            a = Agent(agent_id=agent_id, url=url)
+            try:
+                a = Agent(agent_id=agent_id, url=url)
+                s.add(a)
+                s.flush()  # Flush to detect conflicts before final commit
+            except Exception:
+                # Handle race condition: agent was created by another process
+                s.rollback()
+                a = s.get(Agent, agent_id)
+                if not a:
+                    # Still not found, re-raise the original error
+                    raise
         a.url = url
         a.labels = json.dumps(labels)
         a.active = True
         a.last_heartbeat = now_utc()
-        s.add(a)
         s.commit()
     return jsonify({"ok": True, "agent_id": agent_id})
 

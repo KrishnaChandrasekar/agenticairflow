@@ -11,7 +11,6 @@ RUN npm ci
 
 # Copy source code (excluding node_modules)
 COPY src/ ./src/
-COPY public/ ./public/
 COPY index.html ./
 COPY vite.config.js ./
 COPY tailwind.config.js ./
