@@ -1,5 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { fmtDate, fmtAgo, includesAll, matchLabels } from '../utils/api';
+import AirflowIcon from './AirflowIcon';
+import FlaskIcon from './FlaskIcon';
 
 // Utility function to format execution time duration
 const formatExecutionTime = (startedAt, finishedAt, serverExecutionTime) => {
@@ -33,6 +35,31 @@ const formatExecutionTime = (startedAt, finishedAt, serverExecutionTime) => {
   }
 };
 
+// Helper function to convert execution time string to seconds
+const convertExecutionTimeToSeconds = (timeStr) => {
+  if (!timeStr || timeStr === '-') return NaN;
+  
+  let totalSeconds = 0;
+  
+  // Match days (e.g., "2d")
+  const daysMatch = timeStr.match(/(\d+)d/);
+  if (daysMatch) totalSeconds += parseInt(daysMatch[1]) * 24 * 60 * 60;
+  
+  // Match hours (e.g., "3h")
+  const hoursMatch = timeStr.match(/(\d+)h/);
+  if (hoursMatch) totalSeconds += parseInt(hoursMatch[1]) * 60 * 60;
+  
+  // Match minutes (e.g., "45m")
+  const minutesMatch = timeStr.match(/(\d+)m/);
+  if (minutesMatch) totalSeconds += parseInt(minutesMatch[1]) * 60;
+  
+  // Match seconds (e.g., "30s")
+  const secondsMatch = timeStr.match(/(\d+)s/);
+  if (secondsMatch) totalSeconds += parseInt(secondsMatch[1]);
+  
+  return totalSeconds;
+};
+
 const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTimeRangeClear, loading }) => {
   const [filters, setFilters] = useState({
     job_id: '',
@@ -41,7 +68,9 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
     status: '',
     agent_id: '',
     rc: '',
-    labels: ''
+    labels: '',
+    execution_time_operator: '',
+    execution_time_value: ''
   });
   
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' });
@@ -49,8 +78,10 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
   const [pageSize, setPageSize] = useState(15);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [pageSizeDropdownOpen, setPageSizeDropdownOpen] = useState(false);
+  const [executionTimeDropdownOpen, setExecutionTimeDropdownOpen] = useState(false);
   const statusDropdownRef = useRef(null);
   const pageSizeDropdownRef = useRef(null);
+  const executionTimeDropdownRef = useRef(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -61,13 +92,16 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
       if (pageSizeDropdownRef.current && !pageSizeDropdownRef.current.contains(event.target)) {
         setPageSizeDropdownOpen(false);
       }
+      if (executionTimeDropdownRef.current && !executionTimeDropdownRef.current.contains(event.target)) {
+        setExecutionTimeDropdownOpen(false);
+      }
     };
 
-    if (statusDropdownOpen || pageSizeDropdownOpen) {
+    if (statusDropdownOpen || pageSizeDropdownOpen || executionTimeDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [statusDropdownOpen, pageSizeDropdownOpen]);
+  }, [statusDropdownOpen, pageSizeDropdownOpen, executionTimeDropdownOpen]);
 
   // Filter and sort jobs
   const filteredJobs = useMemo(() => {
@@ -94,6 +128,25 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
     }
     if (filters.labels) {
       filtered = filtered.filter(j => matchLabels(j.labels, filters.labels));
+    }
+    if (filters.execution_time_operator && filters.execution_time_value) {
+      filtered = filtered.filter(j => {
+        const executionTime = formatExecutionTime(j.started_at, j.finished_at, j.execution_time);
+        if (executionTime === '-') return false;
+        
+        // Convert execution time to seconds for comparison
+        const timeInSeconds = convertExecutionTimeToSeconds(executionTime);
+        const filterValue = parseInt(filters.execution_time_value);
+        
+        if (isNaN(timeInSeconds) || isNaN(filterValue)) return true;
+        
+        switch (filters.execution_time_operator) {
+          case 'gt': return timeInSeconds > filterValue;
+          case 'lt': return timeInSeconds < filterValue;
+          case 'eq': return timeInSeconds === filterValue;
+          default: return true;
+        }
+      });
     }
     
     // Apply time range filter
@@ -179,7 +232,9 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
       status: '',
       agent_id: '',
       rc: '',
-      labels: ''
+      labels: '',
+      execution_time_operator: '',
+      execution_time_value: ''
     });
     setPage(1);
   }, []);
@@ -208,6 +263,13 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
     { value: 'FAILED', label: 'FAILED' }
   ];
 
+  const executionTimeOperators = [
+    { value: '', label: 'No filter' },
+    { value: 'gt', label: '>' },
+    { value: 'lt', label: '<' },
+    { value: 'eq', label: '=' }
+  ];
+
   const handleStatusSelect = (value) => {
     handleFilterChange('status', value);
     setStatusDropdownOpen(false);
@@ -216,6 +278,18 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
   const getStatusLabel = () => {
     const option = statusOptions.find(opt => opt.value === filters.status);
     return option ? option.label : 'All statuses';
+  };
+
+  const getExecutionTimeLabel = () => {
+    if (!filters.execution_time_operator) return 'No filter';
+    const operator = executionTimeOperators.find(op => op.value === filters.execution_time_operator);
+    const operatorLabel = operator ? operator.label : 'No filter';
+    return filters.execution_time_value ? `${operatorLabel} ${filters.execution_time_value}s` : operatorLabel;
+  };
+
+  const handleExecutionTimeOperatorSelect = (operator) => {
+    handleFilterChange('execution_time_operator', operator);
+    setExecutionTimeDropdownOpen(false);
   };
 
   if (loading) {
@@ -463,13 +537,34 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
                 </div>
               </th>
               <th className="p-3">
-                <div className="relative">
-                  <input value={filters.execution_time || ''} onChange={(e) => handleFilterChange('execution_time', e.target.value)} className="border border-blue-200 rounded-lg pl-3 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" placeholder="Filter execution time" />
+                <div className="flex gap-2" ref={executionTimeDropdownRef}>
+                  <div className="relative flex-1">
+                    <button onClick={() => setExecutionTimeDropdownOpen(!executionTimeDropdownOpen)} className="border border-blue-200 rounded-lg pl-3 pr-10 py-2.5 w-full text-sm text-gray-900 bg-white/80 hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md text-left">{getExecutionTimeLabel()}</button>
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none z-10">
+                      <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${executionTimeDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                    {executionTimeDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-gradient-to-r from-blue-25 to-indigo-25 border border-blue-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto backdrop-blur-sm">
+                        {executionTimeOperators.map((operator) => (
+                          <button key={operator.value} onClick={() => handleExecutionTimeOperatorSelect(operator.value)} className={`w-full text-left px-4 py-2.5 text-sm transition-all duration-150 hover:bg-blue-100/60 hover:text-blue-900 ${filters.execution_time_operator === operator.value ? 'bg-blue-200/70 text-blue-900 font-medium' : 'text-gray-800'}`}>{operator.label}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {filters.execution_time_operator && (
+                    <input type="number" min="0" value={filters.execution_time_value} onChange={(e) => handleFilterChange('execution_time_value', e.target.value)} className="border border-blue-200 rounded-lg px-3 py-2.5 w-20 text-sm text-gray-900 bg-white/80 hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" placeholder="sec" />
+                  )}
                 </div>
               </th>
               <th className="p-3">
-                <div className="relative">
-                  <input value={filters.created_at || ''} onChange={(e) => handleFilterChange('created_at', e.target.value)} className="border border-blue-200 rounded-lg pl-3 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" placeholder="Filter created date" />
+                <div className="flex items-center justify-center h-11">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-100 to-indigo-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
                 </div>
               </th>
               <th className="p-3">
@@ -502,7 +597,17 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
               paginatedJobs.jobs.map(job => (
                 <tr className="border-b border-slate-200 hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 hover:shadow-sm transition-all duration-200 group" key={job.job_id}>
                   <td className="p-4 table-cell-mono group-hover:text-slate-900">{job.job_id}</td>
-                  <td className="p-4 table-cell-mono group-hover:text-slate-900">{job.dag_id || "-"}</td>
+                  <td className="p-4 table-cell-mono group-hover:text-slate-900">
+                    <div className="flex items-center gap-2">
+                      {job.dag_id && job.dag_id !== "-" && job.dag_id !== "Not Applicable" && (
+                        <AirflowIcon />
+                      )}
+                      {job.dag_id === "Not Applicable" && (
+                        <FlaskIcon className="w-4 h-4 text-orange-500" />
+                      )}
+                      <span>{job.dag_id || "-"}</span>
+                    </div>
+                  </td>
                   <td className="p-4 table-cell-mono group-hover:text-slate-900">{job.task_id || "-"}</td>
                   <td className="p-4">
                     <span className={`inline-flex items-center px-2.5 py-1.5 rounded-full text-xs font-semibold shadow-sm status-chip-${job.status}`}>
