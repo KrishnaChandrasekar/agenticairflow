@@ -1,5 +1,6 @@
 
 from __future__ import annotations
+from datetime import datetime
 import json
 import os
 import shlex
@@ -8,6 +9,17 @@ import subprocess
 import threading
 import time
 from typing import Optional
+
+# Certificate generation utilities and secure registration setup
+try:
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+    print("[agent] Warning: cryptography library not available, secure registration disabled", flush=True)
 
 import psutil
 import requests
@@ -81,10 +93,10 @@ def _reconcile_and_report():
 # =========================
 AGENT_HOME = os.environ.get("AGENT_HOME", "/app/agent_jobs")
 AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "agent-secret")
-AGENT_AUTO_REGISTER = os.environ.get("AGENT_AUTO_REGISTER","false").lower() in ("1","true","yes")
 HEARTBEAT_SECONDS = int(os.environ.get("AGENT_HEARTBEAT_SECONDS","10"))
 
-# Auto-register settings
+# Registration settings
+
 ROUTER_URL = os.environ.get("ROUTER_URL", "http://router:8000").rstrip("/")
 AGENT_ID = os.environ.get("AGENT_ID", "vm1")
 SELF_URL = os.environ.get("SELF_URL", "http://agent_vm1:8001")
@@ -92,6 +104,132 @@ try:
     AGENT_LABELS = json.loads(os.environ.get("AGENT_LABELS", '{"os":"linux","zone":"dev"}'))
 except Exception:
     AGENT_LABELS = {"os": "linux", "zone": "dev"}
+
+# Secure registration settings
+CERTIFICATE_PATH = os.path.join(AGENT_HOME, "..", "agent.crt")
+PRIVATE_KEY_PATH = os.path.join(AGENT_HOME, "..", "agent.key")
+
+try:
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+
+def generate_private_key():
+    if not CRYPTO_AVAILABLE:
+        raise Exception("cryptography library not available")
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+def generate_csr(private_key, agent_id: str) -> str:
+    if not CRYPTO_AVAILABLE:
+        raise Exception("cryptography library not available")
+    subject = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, agent_id),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Agentic Agent"),
+    ])
+    csr = x509.CertificateSigningRequestBuilder().subject_name(
+        subject
+    ).add_extension(
+        x509.SubjectAlternativeName([
+            x509.DNSName(agent_id),
+        ]),
+        critical=False,
+    ).sign(private_key, hashes.SHA256())
+    return csr.public_bytes(serialization.Encoding.PEM).decode()
+
+def save_certificate(certificate_pem: str, private_key):
+    with open(CERTIFICATE_PATH, 'w') as f:
+        f.write(certificate_pem)
+    private_key_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    with open(PRIVATE_KEY_PATH, 'wb') as f:
+        f.write(private_key_pem)
+    print(f"[agent] Certificate saved to {CERTIFICATE_PATH}", flush=True)
+    print(f"[agent] Private key saved to {PRIVATE_KEY_PATH}", flush=True)
+
+def load_certificate():
+    try:
+        with open(CERTIFICATE_PATH, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+def is_certificate_valid():
+    cert_pem = load_certificate()
+    if not cert_pem or not CRYPTO_AVAILABLE:
+        return False
+    try:
+        cert = x509.load_pem_x509_certificate(cert_pem.encode())
+        return datetime.utcnow() < cert.not_valid_after
+    except Exception:
+        return False
+
+def _secure_register():
+    if not CRYPTO_AVAILABLE:
+        print("[agent] Secure registration requires cryptography library", flush=True)
+        return False
+    if is_certificate_valid():
+        print("[agent] Valid certificate already exists, skipping registration", flush=True)
+        return True
+    try:
+        announce_body = {
+            "agent_id": AGENT_ID,
+            "name": AGENT_ID,
+            "url": SELF_URL,
+            "labels": AGENT_LABELS,
+        }
+        print("[agent] Announcing to router...", flush=True)
+        r = requests.post(f"{ROUTER_URL}/agents/announce", json=announce_body, timeout=10)
+        if r.status_code != 200:
+            print(f"[agent] Announce failed: {r.status_code} {r.text}", flush=True)
+            return False
+        announce_resp = r.json()
+        otp = announce_resp.get("otp")
+        if not otp:
+            print("[agent] No OTP received from announce", flush=True)
+            return False
+        print(f"[agent] Received OTP, state: {announce_resp.get('state')}", flush=True)
+        print("[agent] Generating private key and CSR...", flush=True)
+        private_key = generate_private_key()
+        csr_pem = generate_csr(private_key, AGENT_ID)
+        enroll_body = {
+            "agent_id": AGENT_ID,
+            "otp": otp,
+            "csr": csr_pem
+        }
+        print("[agent] Enrolling with CSR...", flush=True)
+        r = requests.post(f"{ROUTER_URL}/agents/enroll", json=enroll_body, timeout=10)
+        if r.status_code != 200:
+            print(f"[agent] Enroll failed: {r.status_code} {r.text}", flush=True)
+            return False
+        enroll_resp = r.json()
+        certificate = enroll_resp.get("certificate")
+        if not certificate:
+            print("[agent] No certificate received from enroll", flush=True)
+            return False
+        save_certificate(certificate, private_key)
+        print(f"[agent] Enrolled successfully, state: {enroll_resp.get('state')}", flush=True)
+        return True
+    except Exception as e:
+        print(f"[agent] Secure registration failed: {e}", flush=True)
+        return False
+
+def _auto_register_forever():
+    if not CRYPTO_AVAILABLE:
+        print("[agent] ERROR: Cryptography library required for secure registration", flush=True)
+        return
+    ok = _secure_register()
+    delay = 60 if ok else 10
+    while True:
+        time.sleep(delay)
+        ok = _secure_register()
+        delay = 60 if ok else 10
 
 # Use bash if available, otherwise sh
 SHELL = "/bin/bash" if shutil.which("bash") else "/bin/sh"
@@ -272,8 +410,6 @@ def _auto_register_once():
 # on startup
 _send_hello()
 _reconcile_and_report()
-if AGENT_AUTO_REGISTER:
-    _auto_register_once()
 import threading as _t
 _t.Thread(target=_heartbeat_loop, daemon=True).start()
 
@@ -484,15 +620,122 @@ def logs(job_id: str):
     return send_file(logp, mimetype="text/plain")
 
 
+
 # =========================
-# Startup: auto-register
+# Secure registration logic
 # =========================
-def _start_autoreg():
-    t = threading.Thread(target=_auto_register_forever, name="auto-register", daemon=True)
-    t.start()
+try:
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+    print("[agent] Warning: cryptography library not available, secure registration disabled", flush=True)
+
+CERTIFICATE_PATH = os.path.join(AGENT_HOME, "..", "agent.crt")
+PRIVATE_KEY_PATH = os.path.join(AGENT_HOME, "..", "agent.key")
+
+def generate_private_key():
+    if not CRYPTO_AVAILABLE:
+        raise Exception("cryptography library not available")
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+def generate_csr(private_key, agent_id: str) -> str:
+    if not CRYPTO_AVAILABLE:
+        raise Exception("cryptography library not available")
+    subject = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, agent_id),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Agentic Agent"),
+    ])
+    csr = x509.CertificateSigningRequestBuilder().subject_name(subject).add_extension(
+        x509.SubjectAlternativeName([x509.DNSName(agent_id)]), critical=False
+    ).sign(private_key, hashes.SHA256())
+    return csr.public_bytes(serialization.Encoding.PEM).decode()
+
+def save_certificate(certificate_pem: str, private_key):
+    with open(CERTIFICATE_PATH, 'w') as f:
+        f.write(certificate_pem)
+    private_key_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    with open(PRIVATE_KEY_PATH, 'wb') as f:
+        f.write(private_key_pem)
+    print(f"[agent] Certificate saved to {CERTIFICATE_PATH}", flush=True)
+    print(f"[agent] Private key saved to {PRIVATE_KEY_PATH}", flush=True)
+
+def load_certificate():
+    try:
+        with open(CERTIFICATE_PATH, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+def is_certificate_valid():
+    cert_pem = load_certificate()
+    if not cert_pem or not CRYPTO_AVAILABLE:
+        return False
+    try:
+        cert = x509.load_pem_x509_certificate(cert_pem.encode())
+        from datetime import datetime
+        return datetime.utcnow() < cert.not_valid_after
+    except Exception:
+        return False
 
 
-_start_autoreg()
+def _secure_register():
+    if not CRYPTO_AVAILABLE:
+        print("[agent] Secure registration requires cryptography library", flush=True)
+        return False
+    if is_certificate_valid():
+        print("[agent] Valid certificate already exists, skipping registration", flush=True)
+        return True
+    try:
+        announce_body = {
+            "agent_id": AGENT_ID,
+            "name": AGENT_ID,
+            "url": SELF_URL,
+            "labels": AGENT_LABELS,
+        }
+        print("[agent] Announcing to router...", flush=True)
+        r = requests.post(f"{ROUTER_URL}/agents/announce", json=announce_body, timeout=10)
+        if r.status_code != 200:
+            print(f"[agent] Announce failed: {r.status_code} {r.text}", flush=True)
+            return False
+        announce_resp = r.json()
+        otp = announce_resp.get("otp")
+        if not otp:
+            print("[agent] No OTP received from announce", flush=True)
+            return False
+        print(f"[agent] Received OTP, state: {announce_resp.get('state')}", flush=True)
+        private_key = generate_private_key()
+        csr_pem = generate_csr(private_key, AGENT_ID)
+        enroll_body = {
+            "agent_id": AGENT_ID,
+            "otp": otp,
+            "csr": csr_pem
+        }
+        print("[agent] Enrolling with CSR...", flush=True)
+        r = requests.post(f"{ROUTER_URL}/agents/enroll", json=enroll_body, timeout=10)
+        if r.status_code != 200:
+            print(f"[agent] Enroll failed: {r.status_code} {r.text}", flush=True)
+            return False
+        enroll_resp = r.json()
+        certificate = enroll_resp.get("certificate")
+        if not certificate:
+            print("[agent] No certificate received from enroll", flush=True)
+            return False
+        save_certificate(certificate, private_key)
+        print(f"[agent] Enrolled successfully, state: {enroll_resp.get('state')}", flush=True)
+        return True
+    except Exception as e:
+        print(f"[agent] Secure registration failed: {e}", flush=True)
+        return False
+
+_secure_register()  # Start secure registration immediately on agent startup
 
 # =========================
 # Main

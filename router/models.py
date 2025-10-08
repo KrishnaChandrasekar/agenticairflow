@@ -29,9 +29,15 @@ class Job(Base):
 class Agent(Base):
     __tablename__ = "agents"
     agent_id   = Column(String, primary_key=True)
+    name       = Column(String, nullable=True)     # Human-readable agent name
     url        = Column(Text, nullable=False)      # e.g. http://agent_vm1:8001
     labels     = Column(Text, nullable=True)       # JSON string
-    active     = Column(Boolean, default=True)
+    active     = Column(Boolean, default=False)    # Default to False, set True after enrollment
+    state      = Column(String, default="NEW")     # NEW, PENDING_APPROVAL, ENROLLING, REGISTERED
+    otp        = Column(String, nullable=True)     # One-time password for enrollment
+    otp_expires_at = Column(DateTime, nullable=True)  # OTP expiration timestamp
+    csr        = Column(Text, nullable=True)       # Certificate Signing Request
+    certificate = Column(Text, nullable=True)      # Issued certificate
     last_heartbeat = Column(DateTime, default=now_utc, onupdate=now_utc)
 
 def make_session(db_url="sqlite:///db.sqlite"):

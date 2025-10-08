@@ -1,4 +1,10 @@
+
+# -----------------------------
+# Imports
+# -----------------------------
 import os, json, uuid, requests, sys
+import secrets
+import base64
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
@@ -6,8 +12,17 @@ from flask import Flask, request, jsonify
 from flask_restx import Api, Resource, fields
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
 from models import Base, Job, Agent, now_utc
+
+# Certificate and crypto utilities
+try:
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
 
 # -----------------------------
 # Config
@@ -15,25 +30,33 @@ from models import Base, Job, Agent, now_utc
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:////data/db.sqlite")
 ROUTER_TOKEN = os.environ.get("ROUTER_TOKEN", "router-secret")
 AGENT_TOKEN  = os.environ.get("AGENT_TOKEN",  "agent-secret")
+OTP_EXPIRY_MINUTES = int(os.environ.get("OTP_EXPIRY_MINUTES", "60"))  # OTP expires in 60 minutes
 
 # -----------------------------
 # DB setup
 # -----------------------------
+# Ensure /data directory exists for SQLite DB
+_db_path = DATABASE_URL.replace("sqlite://", "")
+db_dir = os.path.dirname(_db_path)
+if db_dir and not os.path.exists(db_dir):
+    os.makedirs(db_dir, exist_ok=True)
 engine = create_engine(DATABASE_URL, echo=False, future=True)
 Session = sessionmaker(bind=engine, expire_on_commit=False)
+Base.metadata.create_all(engine)
 
+# -----------------------------
+# Utility: format_execution_time
+# -----------------------------
 def format_execution_time(started_at, finished_at, job_status=None):
     """Calculate and format execution time as human-readable string."""
     if not started_at:
         return "-"
-    
     # Handle both datetime objects and timestamp strings for started_at
     if isinstance(started_at, str):
         try:
             started_at = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
         except:
             return "-"
-    
     # For running jobs without finished_at, use current UTC time
     if not finished_at:
         # Only show running time if job is actually running
@@ -48,20 +71,16 @@ def format_execution_time(started_at, finished_at, job_status=None):
                 finished_at = datetime.fromisoformat(finished_at.replace('Z', '+00:00'))
             except:
                 return "-"
-    
     # Ensure both timestamps are timezone-naive UTC for proper comparison
     if hasattr(started_at, 'tzinfo') and started_at.tzinfo is not None:
         started_at = started_at.astimezone(timezone.utc).replace(tzinfo=None)
     if hasattr(finished_at, 'tzinfo') and finished_at.tzinfo is not None:
         finished_at = finished_at.astimezone(timezone.utc).replace(tzinfo=None)
-    
     duration = finished_at - started_at
     total_seconds = int(duration.total_seconds())
-    
     # Ensure we don't show negative time (in case of clock skew)
     if total_seconds < 0:
         return "-"
-    
     if total_seconds < 60:
         return f"{total_seconds}s"
     elif total_seconds < 3600:
@@ -73,8 +92,6 @@ def format_execution_time(started_at, finished_at, job_status=None):
         minutes = (total_seconds % 3600) // 60
         seconds = total_seconds % 60
         return f"{hours}h {minutes}m {seconds}s"
-
-Base.metadata.create_all(engine)
 
 # -----------------------------
 # App & Swagger Setup
@@ -134,10 +151,13 @@ def not_found(error):
 # Define API models for Swagger documentation
 agent_model = api.model('Agent', {
     'agent_id': fields.String(required=True, description='Unique identifier for the agent'),
+    'name': fields.String(description='Human-readable agent name'),
     'url': fields.String(required=True, description='Agent endpoint URL (e.g., http://agent_vm1:8001)'),
     'labels': fields.Raw(description='Key-value pairs for agent labels (JSON object)'),
     'active': fields.Boolean(description='Whether the agent is registered and active'),
-    'last_heartbeat': fields.DateTime(description='Last heartbeat timestamp from agent')
+    'state': fields.String(description='Agent registration state'),
+    'last_heartbeat': fields.DateTime(description='Last heartbeat timestamp from agent'),
+    'has_certificate': fields.Boolean(description='Whether the agent has a certificate'),
 })
 
 job_model = api.model('Job', {
@@ -211,7 +231,11 @@ def labels_match(agent_labels: Dict[str, Any], job_labels: Dict[str, Any]) -> bo
     return True
 
 def pick_agent_by_labels(session, labels: Dict[str, Any]) -> Optional['Agent']:
-    agents = session.query(Agent).filter(Agent.active == True).all()
+    # Only consider agents that are both active AND in REGISTERED state
+    agents = session.query(Agent).filter(
+        Agent.active == True,
+        Agent.state == "REGISTERED"
+    ).all()
     for a in agents:
         try:
             al = json.loads(a.labels or "{}")
@@ -257,6 +281,7 @@ def parse_agent_timestamp(timestamp_str):
         print(f"[ROUTER DEBUG] parse_agent_timestamp: failed to parse '{timestamp_str}': {e}", file=sys.stderr)
         return None
 
+## --- Begin new agent registration logic --- ##
 # -----------------------------
 # Endpoints
 # -----------------------------
@@ -272,9 +297,123 @@ def agents_deregister():
         a = s.get(Agent, agent_id)
         if not a:
             return jsonify({"error": "agent not found"}), 404
+        if getattr(a, "state", None) != "REGISTERED":
+            return jsonify({"error": "can only deregister agents in REGISTERED state"}), 400
+        # Move agent back to NEW state and clear registration data
+        a.state = "NEW"
         a.active = False
+        a.certificate = None
+        a.csr = None
+        a.otp = None
+        a.otp_expires_at = None
         s.commit()
     return jsonify({"ok": True, "agent_id": agent_id})
+
+@app.post("/agents/announce")
+def agents_announce():
+    """Agent announces itself for registration (Step 1 of secure registration)"""
+    data = request.get_json(force=True) or {}
+    agent_id = (data.get("agent_id") or "").strip()
+    name = (data.get("name") or "").strip()
+    url = (data.get("url") or "").strip()
+    labels = data.get("labels") or {}
+    if not agent_id or not url:
+        return jsonify({"error": "agent_id and url required"}), 400
+    with Session() as s:
+        a = s.get(Agent, agent_id)
+        if a and getattr(a, "state", None) == "REGISTERED":
+            return jsonify({"error": "agent already registered"}), 409
+        # Generate OTP
+        import secrets
+        otp = secrets.token_urlsafe(9)
+        from datetime import datetime, timedelta
+        otp_expires_at = datetime.utcnow() + timedelta(minutes=60)
+        if not a:
+            a = Agent(
+                agent_id=agent_id,
+                name=name or agent_id,
+                url=url,
+                state="PENDING_APPROVAL",
+                otp=otp,
+                otp_expires_at=otp_expires_at,
+                active=False
+            )
+            s.add(a)
+        else:
+            a.name = name or agent_id
+            a.url = url
+            a.state = "PENDING_APPROVAL"
+            a.otp = otp
+            a.otp_expires_at = otp_expires_at
+            a.active = False
+        try:
+            a.labels = json.dumps(labels)
+        except Exception:
+            a.labels = "{}"
+        a.last_heartbeat = now_utc()
+        s.commit()
+    return jsonify({
+        "ok": True,
+        "otp": otp,
+        "agent_id": agent_id,
+        "state": "PENDING_APPROVAL"
+    })
+
+@app.post("/agents/enroll")
+def agents_enroll():
+    """Agent enrolls with OTP and CSR to receive certificate (Step 2 of secure registration)"""
+    data = request.get_json(force=True) or {}
+    agent_id = (data.get("agent_id") or "").strip()
+    otp = (data.get("otp") or "").strip()
+    csr = (data.get("csr") or "").strip()
+    if not agent_id or not otp or not csr:
+        return jsonify({"error": "agent_id, otp, and csr required"}), 400
+    with Session() as s:
+        a = s.get(Agent, agent_id)
+        if not a:
+            return jsonify({"error": "agent not found"}), 404
+        if getattr(a, "state", None) != "PENDING_APPROVAL":
+            return jsonify({"error": f"invalid state: {a.state}"}), 400
+        if not a.otp or not a.otp_expires_at or datetime.utcnow() > a.otp_expires_at:
+            return jsonify({"error": "OTP expired or invalid"}), 401
+        if a.otp != otp:
+            return jsonify({"error": "invalid OTP"}), 401
+        try:
+            # Generate certificate from CSR
+            cert = None
+            try:
+                from cryptography import x509
+                from cryptography.x509.oid import NameOID
+                from cryptography.hazmat.primitives import hashes, serialization
+                from cryptography.hazmat.primitives.asymmetric import rsa
+                csr_obj = x509.load_pem_x509_csr(csr.encode())
+                ca_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+                subject = x509.Name([
+                    x509.NameAttribute(NameOID.COMMON_NAME, agent_id),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Agentic Router"),
+                ])
+                cert_obj = x509.CertificateBuilder().subject_name(subject).issuer_name(subject).public_key(csr_obj.public_key()).serial_number(x509.random_serial_number()).not_valid_before(datetime.utcnow()).not_valid_after(datetime.utcnow() + timedelta(days=365)).add_extension(x509.SubjectAlternativeName([x509.DNSName(agent_id)]), critical=False).sign(ca_private_key, hashes.SHA256())
+                cert = cert_obj.public_bytes(serialization.Encoding.PEM).decode()
+            except Exception as e:
+                return jsonify({"error": f"certificate generation failed: {str(e)}"}), 500
+            # Update agent state
+            a.state = "REGISTERED"
+            a.active = True
+            a.csr = csr
+            a.certificate = cert
+            a.otp = None
+            a.otp_expires_at = None
+            a.last_heartbeat = now_utc()
+            s.commit()
+            return jsonify({
+                "ok": True,
+                "certificate": cert,
+                "agent_id": agent_id,
+                "state": "REGISTERED"
+            })
+        except Exception as e:
+            return jsonify({"error": f"certificate generation failed: {str(e)}"}), 500
+## --- End new agent registration logic --- ##
 @api.route('/health')
 class Health(Resource):
     @api.doc('health_check')
@@ -399,10 +538,13 @@ def _serialize_agent(a):
         labels = {}
     return {
         "agent_id": a.agent_id,
+        "name": getattr(a, "name", None),
         "url": a.url,
         "labels": labels,
-        "active": bool(a.active),
+        "active": bool(getattr(a, "active", False)),
+        "state": getattr(a, "state", "NEW"),
         "last_heartbeat": a.last_heartbeat.isoformat() if a.last_heartbeat else None,
+        "has_certificate": bool(getattr(a, "certificate", None)),
     }
 
 def _agents_filtered(active=None):
@@ -506,6 +648,7 @@ def agents_register():
         a.last_heartbeat = now_utc()
         s.commit()
     return jsonify({"ok": True, "agent_id": agent_id})
+
 
 @app.post("/submit")
 @api.doc('submit_job', security='Bearer')
