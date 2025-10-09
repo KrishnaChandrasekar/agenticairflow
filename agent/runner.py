@@ -24,8 +24,8 @@ def start_detached(job_id, command, run_as=None, cwd=None, env=None, timeout_sec
     if run_as:
         cmd = f"sudo -n -u {shlex.quote(run_as)} bash -lc {shlex.quote(cmd)}"
 
-    wrapped = f"bash -lc 'nohup bash -lc {shlex.quote(cmd)} >> {shlex.quote(log)} 2>&1; echo $? > {shlex.quote(rcp)}'"
-    full = f"bash -lc 'nohup {wrapped} >> {shlex.quote(log)} 2>&1 & echo $! > {shlex.quote(pidp)}'"
+    wrapped = f"bash -lc 'setsid nohup bash -lc {shlex.quote(cmd)} >> {shlex.quote(log)} 2>&1; echo $? > {shlex.quote(rcp)}'"
+    full = f"bash -lc 'setsid nohup {wrapped} >> {shlex.quote(log)} 2>&1 & echo $! > {shlex.quote(pidp)}'"
 
     subprocess.Popen(full, shell=True, cwd=cwd, env={**os.environ, **(env or {})})
 

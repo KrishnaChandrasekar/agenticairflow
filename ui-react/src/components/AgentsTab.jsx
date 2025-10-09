@@ -2,24 +2,29 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { fmtDate, fmtAgo, includesAll, matchLabels, fetchJSON, API_BASE, toTs, getAuthHeaders } from '../utils/api';
 
 // Helper functions moved outside component to prevent hoisting issues
-const getAgentStatus = (agent, OFFLINE_THRESHOLD_MS) => {
+
+// New registration flow: use agent.state, heartbeat, and capability
+const getAgentStatus = (agent) => agent.state || "NEW";
+const getAgentHeartbeatStatus = (agent, OFFLINE_THRESHOLD_MS, serverTimeMs) => {
   const lastHbMs = toTs(agent.last_heartbeat);
-  const nowMs = Date.now();
-  
+  const nowMs = serverTimeMs || Date.now();
   if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
-    return agent.active ? "Registered" : "Discovered";
+    return "Online";
   }
   return "Offline";
 };
-
-const getAgentAvailability = (agent, OFFLINE_THRESHOLD_MS) => {
+const getAgentJobCapability = (agent, OFFLINE_THRESHOLD_MS, serverTimeMs) => {
+  const state = agent.state || "NEW";
   const lastHbMs = toTs(agent.last_heartbeat);
-  const nowMs = Date.now();
-  
-  if (lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS)) {
-    return agent.active ? "Active" : "Inactive";
+  const nowMs = serverTimeMs || Date.now();
+  const isOnline = lastHbMs && (nowMs - lastHbMs < OFFLINE_THRESHOLD_MS);
+  if (state === "REGISTERED" && isOnline) {
+    return "Available";
+  } else if (state === "REGISTERED" && !isOnline) {
+    return "Busy";
+  } else {
+    return "Busy";
   }
-  return "Inactive";
 };
 
 const AgentsTab = ({ 
@@ -32,83 +37,58 @@ const AgentsTab = ({
   loading, 
   refreshAgents 
 }) => {
+  const [serverTimeMs, setServerTimeMs] = useState(Date.now());
   const [filters, setFilters] = useState({
     agent_id: '',
     url: '',
     labels: '',
-    status: '',
-    availability: ''
+    state: '',
+    heartbeat: '',
+    capability: ''
   });
   
   const [sort, setSort] = useState({ key: 'agent_id', dir: 'asc' });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
   const [pageSizeDropdownOpen, setPageSizeDropdownOpen] = useState(false);
-  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
-  const [availabilityDropdownOpen, setAvailabilityDropdownOpen] = useState(false);
+  const [stateDropdownOpen, setStateDropdownOpen] = useState(false);
+  const [heartbeatDropdownOpen, setHeartbeatDropdownOpen] = useState(false);
+  const [capabilityDropdownOpen, setCapabilityDropdownOpen] = useState(false);
   const [banner, setBanner] = useState({ show: false, message: '', type: 'info' });
   const [jobCounts, setJobCounts] = useState({});
   const pageSizeDropdownRef = useRef(null);
-  const statusDropdownRef = useRef(null);
-  const availabilityDropdownRef = useRef(null);
+  const stateDropdownRef = useRef(null);
+  const heartbeatDropdownRef = useRef(null);
+  const capabilityDropdownRef = useRef(null);
 
   const OFFLINE_THRESHOLD_MS = 20 * 1000;
 
-  // Calculate job counts for each agent in time range
+  // Fetch server time on mount and every 30s
   useEffect(() => {
-    const calculateJobCounts = async () => {
-      if (!agents || agents.length === 0) {
-        setJobCounts({});
-        return;
-      }
-
+    const fetchServerTime = async () => {
       try {
-        const counts = {};
-        await Promise.all(agents.map(async agent => {
-          try {
-            const j = await fetchJSON(`${API_BASE}/jobs?limit=1000&agent_id=${encodeURIComponent(agent.agent_id)}`);
-            const arr = Array.isArray(j) ? j : (j.jobs || []);
-            
-            const filteredJobs = arr.filter(job => {
-              if (!timeRange || !timeRange.enabled) return true;
-              const field = timeRange.field || 'updated_at';
-              const v = job[field];
-              const t = toTs(v);
-              if (isNaN(t)) return false;
-              
-              if (timeRange.mode === 'relative') {
-                const to = Date.now();
-                const from = to - (timeRange.relMins || 1440) * 60 * 1000;
-                return t >= from && t <= to;
-              } else if (timeRange.abs) {
-                const { fromMs, toMs } = timeRange.abs;
-                if (fromMs && t < fromMs) return false;
-                if (toMs && t > toMs) return false;
-                return true;
-              }
-              return true;
-            });
-            
-            counts[agent.agent_id] = filteredJobs.length;
-          } catch (error) {
-            console.error(`Error fetching jobs for agent ${agent.agent_id}:`, error);
-            counts[agent.agent_id] = 0;
+        const resp = await fetch(`${API_BASE}/agents`, { headers: getAuthHeaders() });
+        const dateHeader = resp.headers.get('Date');
+        let serverNow = null;
+        if (dateHeader) {
+          serverNow = new Date(dateHeader).getTime();
+        } else {
+          const data = await resp.json();
+          if (Array.isArray(data.agents) && data.agents.length > 0) {
+            serverNow = Math.max(...data.agents.map(a => toTs(a.last_heartbeat)));
+          } else {
+            serverNow = Date.now();
           }
-        }));
-        setJobCounts(counts);
-      } catch (error) {
-        console.error('Error calculating job counts:', error);
-        setJobCounts({});
+        }
+        setServerTimeMs(serverNow);
+      } catch (e) {
+        setServerTimeMs(Date.now());
       }
     };
-
-    // Add a small delay to prevent rapid re-execution and add safety check
-    const timeoutId = setTimeout(() => {
-      calculateJobCounts();
-    }, 100);
-
-    return () => clearTimeout(timeoutId);
-  }, [agents?.length, timeRange?.enabled, timeRange?.mode, timeRange?.relMins]);
+    fetchServerTime();
+    const interval = setInterval(fetchServerTime, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -116,19 +96,22 @@ const AgentsTab = ({
       if (pageSizeDropdownRef.current && !pageSizeDropdownRef.current.contains(event.target)) {
         setPageSizeDropdownOpen(false);
       }
-      if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target)) {
-        setStatusDropdownOpen(false);
+      if (stateDropdownRef.current && !stateDropdownRef.current.contains(event.target)) {
+        setStateDropdownOpen(false);
       }
-      if (availabilityDropdownRef.current && !availabilityDropdownRef.current.contains(event.target)) {
-        setAvailabilityDropdownOpen(false);
+      if (heartbeatDropdownRef.current && !heartbeatDropdownRef.current.contains(event.target)) {
+        setHeartbeatDropdownOpen(false);
+      }
+      if (capabilityDropdownRef.current && !capabilityDropdownRef.current.contains(event.target)) {
+        setCapabilityDropdownOpen(false);
       }
     };
 
-    if (pageSizeDropdownOpen || statusDropdownOpen || availabilityDropdownOpen) {
+    if (pageSizeDropdownOpen || stateDropdownOpen || heartbeatDropdownOpen || capabilityDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [pageSizeDropdownOpen, statusDropdownOpen, availabilityDropdownOpen]);
+  }, [pageSizeDropdownOpen, stateDropdownOpen, heartbeatDropdownOpen, capabilityDropdownOpen]);
 
   // Filter and sort agents
   const filteredAgents = useMemo(() => {
@@ -145,16 +128,22 @@ const AgentsTab = ({
     if (filters.labels) {
       filtered = filtered.filter(a => matchLabels(a.labels, filters.labels));
     }
-    if (filters.status) {
+    if (filters.state) {
       filtered = filtered.filter(a => {
-        const status = getAgentStatus(a, OFFLINE_THRESHOLD_MS);
-        return status === filters.status;
+        const state = getAgentStatus(a);
+        return state === filters.state;
       });
     }
-    if (filters.availability) {
+    if (filters.heartbeat) {
       filtered = filtered.filter(a => {
-        const availability = getAgentAvailability(a, OFFLINE_THRESHOLD_MS);
-        return availability === filters.availability;
+        const heartbeat = getAgentHeartbeatStatus(a, OFFLINE_THRESHOLD_MS, serverTimeMs);
+        return heartbeat === filters.heartbeat;
+      });
+    }
+    if (filters.capability) {
+      filtered = filtered.filter(a => {
+        const capability = getAgentJobCapability(a, OFFLINE_THRESHOLD_MS, serverTimeMs);
+        return capability === filters.capability;
       });
     }
     
@@ -253,46 +242,35 @@ const AgentsTab = ({
       agent_id: '',
       url: '',
       labels: '',
-      status: '',
-      availability: ''
+      state: '',
+      heartbeat: '',
+      capability: ''
     });
     setPage(1);
   };
 
   // Status dropdown options
-  const statusOptions = [
-    { value: '', label: 'All Status' },
-    { value: 'Registered', label: 'Registered' },
-    { value: 'Discovered', label: 'Discovered' },
-    { value: 'Offline', label: 'Offline' }
-  ];
+    const stateOptions = [
+  { value: '', label: 'ALL STATES' },
+  { value: 'NEW', label: 'NEW' },
+  { value: 'PENDING_APPROVAL', label: 'PENDING APPROVAL' },
+  { value: 'ENROLLING', label: 'ENROLLING' },
+  { value: 'REGISTERED', label: 'REGISTERED' }
+    ];
 
-  // Availability dropdown options
-  const availabilityOptions = [
-    { value: '', label: 'All Availability' },
-    { value: 'Active', label: 'Active' },
-    { value: 'Inactive', label: 'Inactive' }
-  ];
+    const heartbeatOptions = [
+      { value: '', label: 'All Heartbeat' },
+      { value: 'Online', label: 'Online' },
+      { value: 'Offline', label: 'Offline' }
+    ];
 
-  const handleStatusSelect = (value) => {
-    handleFilterChange('status', value);
-    setStatusDropdownOpen(false);
-  };
+    const capabilityOptions = [
+      { value: '', label: 'All' },
+      { value: 'Available', label: 'Available' },
+      { value: 'Busy', label: 'Busy' }
+    ];
 
-  const handleAvailabilitySelect = (value) => {
-    handleFilterChange('availability', value);
-    setAvailabilityDropdownOpen(false);
-  };
-
-  const getStatusLabel = () => {
-    const option = statusOptions.find(opt => opt.value === filters.status);
-    return option ? option.label : 'All Status';
-  };
-
-  const getAvailabilityLabel = () => {
-    const option = availabilityOptions.find(opt => opt.value === filters.availability);
-    return option ? option.label : 'All Availability';
-  };
+  // ...existing code...
 
   const deregisterAgent = async (agentId) => {
     setBanner({
@@ -580,14 +558,22 @@ const AgentsTab = ({
               </th>
               <th 
                 className="text-left p-4 cursor-pointer table-header-text table-header-hover group" 
-                onClick={() => handleSort('status')}
+                onClick={() => handleSort('state')}
               >
                 <div className="flex items-center gap-2">
                   <svg className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <span className="font-semibold text-white group-hover:text-white transition-colors">Status</span>
-                  <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('status')}</span>
+                  <span className="font-semibold text-white group-hover:text-white transition-colors">State</span>
+                  <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('state')}</span>
+                </div>
+              </th>
+              <th className="text-left p-4 table-header-text">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
+                  <span className="font-semibold text-white">Heartbeat</span>
                 </div>
               </th>
               <th className="text-left p-4 table-header-text">
@@ -619,18 +605,10 @@ const AgentsTab = ({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" />
                   </svg>
                   <span className="font-semibold text-white group-hover:text-white transition-colors">{formatRangeLabel()}</span> 
-                                    <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('jobs_in_range')}
-                </span>
+                  <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('jobs_in_range')}</span>
                 </div>
               </th>
-              <th className="text-left p-4 table-header-text">
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                  </svg>
-                  <span className="font-semibold text-white">Actions</span>
-                </div>
-              </th>
+              <th className="text-left p-4 table-header-text">Actions</th>
             </tr>
 
             {/* Filter row */}
@@ -645,7 +623,7 @@ const AgentsTab = ({
                   <input 
                     value={filters.agent_id}
                     onChange={(e) => handleFilterChange('agent_id', e.target.value)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" 
+                    className="border border-blue-200 rounded-lg pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md text-left" 
                     placeholder="Filter agent ID" 
                   />
                 </div>
@@ -660,7 +638,7 @@ const AgentsTab = ({
                   <input 
                     value={filters.url}
                     onChange={(e) => handleFilterChange('url', e.target.value)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" 
+                    className="border border-blue-200 rounded-lg pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md text-left" 
                     placeholder="Filter URL" 
                   />
                 </div>
@@ -675,37 +653,37 @@ const AgentsTab = ({
                   <input 
                     value={filters.labels}
                     onChange={(e) => handleFilterChange('labels', e.target.value)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" 
+                    className="border border-blue-200 rounded-lg pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md text-left" 
                     placeholder="key or 'k:v'" 
                   />
                 </div>
               </th>
               <th className="p-3">
-                <div className="relative" ref={statusDropdownRef}>
+                <div className="relative" ref={stateDropdownRef}>
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
                     <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
                   <button
-                    onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                    onClick={() => setStateDropdownOpen(!stateDropdownOpen)}
                     className="border border-blue-200 rounded-lg pl-10 pr-10 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md text-left"
                   >
-                    {getStatusLabel()}
+                    {stateOptions.find(o => o.value === filters.state)?.label || 'All States'}
                   </button>
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none z-10">
-                    <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${statusDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${stateDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </div>
-                  {statusDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
-                      {statusOptions.map((option) => (
+                  {stateDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+                      {stateOptions.map((option) => (
                         <button
                           key={option.value}
-                          onClick={() => handleStatusSelect(option.value)}
+                          onClick={() => { handleFilterChange('state', option.value); setStateDropdownOpen(false); }}
                           className={`w-full text-left px-3 py-2.5 text-sm transition-all duration-150 hover:bg-blue-50 hover:text-blue-900 ${
-                            filters.status === option.value 
+                            filters.state === option.value 
                               ? 'bg-blue-100 text-blue-900 font-medium' 
                               : 'text-gray-700'
                           }`}
@@ -718,31 +696,31 @@ const AgentsTab = ({
                 </div>
               </th>
               <th className="p-3">
-                <div className="relative" ref={availabilityDropdownRef}>
+                <div className="relative" ref={heartbeatDropdownRef}>
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
                     <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   </div>
                   <button
-                    onClick={() => setAvailabilityDropdownOpen(!availabilityDropdownOpen)}
+                    onClick={() => setHeartbeatDropdownOpen(!heartbeatDropdownOpen)}
                     className="border border-blue-200 rounded-lg pl-10 pr-10 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md text-left"
                   >
-                    {getAvailabilityLabel()}
+                    {heartbeatOptions.find(o => o.value === filters.heartbeat)?.label || 'All Heartbeat'}
                   </button>
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none z-10">
-                    <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${availabilityDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${heartbeatDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </div>
-                  {availabilityDropdownOpen && (
+                  {heartbeatDropdownOpen && (
                     <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
-                      {availabilityOptions.map((option) => (
+                      {heartbeatOptions.map((option) => (
                         <button
                           key={option.value}
-                          onClick={() => handleAvailabilitySelect(option.value)}
+                          onClick={() => { handleFilterChange('heartbeat', option.value); setHeartbeatDropdownOpen(false); }}
                           className={`w-full text-left px-3 py-2.5 text-sm transition-all duration-150 hover:bg-blue-50 hover:text-blue-900 ${
-                            filters.availability === option.value 
+                            filters.heartbeat === option.value 
                               ? 'bg-blue-100 text-blue-900 font-medium' 
                               : 'text-gray-700'
                           }`}
@@ -754,8 +732,49 @@ const AgentsTab = ({
                   )}
                 </div>
               </th>
-              <th className="p-3"></th>
-              <th className="p-3"></th>
+              <th className="p-3">
+                <div className="relative" ref={capabilityDropdownRef}>
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a1.994 1.994 0 01-1.414.586H7a4 4 0 01-4-4V7a4 4 0 014-4z" />
+                    </svg>
+                  </div>
+                  <button
+                    onClick={() => setCapabilityDropdownOpen(!capabilityDropdownOpen)}
+                    className="border border-blue-200 rounded-lg pl-10 pr-10 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md text-left"
+                  >
+                    {capabilityOptions.find(o => o.value === filters.capability)?.label || 'All'}
+                  </button>
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none z-10">
+                    <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${capabilityDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                  {capabilityDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                      {capabilityOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() => { handleFilterChange('capability', option.value); setCapabilityDropdownOpen(false); }}
+                          className={`w-full text-left px-3 py-2.5 text-sm transition-all duration-150 hover:bg-blue-50 hover:text-blue-900 ${
+                            filters.capability === option.value 
+                              ? 'bg-blue-100 text-blue-900 font-medium' 
+                              : 'text-gray-700'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </th>
+              <th className="p-3">
+                {/* Last Heartbeat filter not needed, but keep cell for alignment */}
+              </th>
+              <th className="p-3">
+                {/* Jobs in Range filter not needed, but keep cell for alignment */}
+              </th>
               <th className="p-3">
                 <button 
                   onClick={handleClearFilters}
@@ -764,7 +783,7 @@ const AgentsTab = ({
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16" />
                   </svg>
-                  Clear all
+                  Clear Filters
                 </button>
               </th>
             </tr>
@@ -792,8 +811,9 @@ const AgentsTab = ({
                   agent={agent} 
                   timezone={timezone}
                   jobCount={jobCounts[agent.agent_id] || 0}
-                  getStatus={(agent) => getAgentStatus(agent, OFFLINE_THRESHOLD_MS)}
-                  getAvailability={(agent) => getAgentAvailability(agent, OFFLINE_THRESHOLD_MS)}
+                  getAgentStatus={(a) => getAgentStatus(a)}
+                  getAgentHeartbeatStatus={(a) => getAgentHeartbeatStatus(a, OFFLINE_THRESHOLD_MS, serverTimeMs)}
+                  getAgentJobCapability={(a) => getAgentJobCapability(a, OFFLINE_THRESHOLD_MS, serverTimeMs)}
                   onTestJobClick={onTestJobClick}
                   onDeregisterClick={deregisterAgent}
                 />
@@ -810,14 +830,17 @@ const AgentRow = ({
   agent, 
   timezone, 
   jobCount, 
-  getStatus, 
-  getAvailability, 
+  getAgentStatus, 
+  getAgentHeartbeatStatus, 
+  getAgentJobCapability, 
   onTestJobClick, 
   onDeregisterClick 
 }) => {
-  const status = getStatus(agent);
-  const availability = getAvailability(agent);
-  const canSubmitTestJob = status === 'Registered' && availability === 'Active';
+  const state = getAgentStatus(agent);
+  const heartbeatStatus = getAgentHeartbeatStatus(agent);
+  const jobCapability = getAgentJobCapability(agent);
+  const canSubmitTestJob = state === 'REGISTERED' && jobCapability === 'Available';
+  const canDeregister = state === 'REGISTERED';
 
   return (
     <tr className="border-b border-slate-200 hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 hover:shadow-sm transition-all duration-200 group">
@@ -842,21 +865,33 @@ const AgentRow = ({
       </td>
       <td className="p-4">
         <span className={`inline-flex items-center px-2.5 py-1.5 rounded-full text-xs font-semibold shadow-sm ${
-          status === 'Registered' ? 'bg-green-100 text-green-800 border border-green-200' :
-          status === 'Discovered' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
+          state === 'REGISTERED' ? 'bg-green-100 text-green-800 border border-green-200' :
+          state === 'PENDING_APPROVAL' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
+          state === 'ENROLLING' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+          state === 'NEW' ? 'bg-gray-100 text-gray-800 border border-gray-200' :
           'bg-red-100 text-red-800 border border-red-200'
         }`}>
-          {status}
+          {state}
         </span>
       </td>
       <td className="p-4">
         <span className="inline-flex items-center gap-2">
           <span 
             className={`inline-block w-3 h-3 rounded-full ${
-              availability === 'Active' ? 'bg-green-500' : 'bg-red-500'
+              heartbeatStatus === 'Online' ? 'bg-green-500' : 'bg-red-500'
             }`}
           />
-          <span className="table-cell-text font-medium">{availability}</span>
+          <span className="table-cell-text font-medium">{heartbeatStatus}</span>
+        </span>
+      </td>
+      <td className="p-4">
+        <span className="inline-flex items-center gap-2">
+          <span 
+            className={`inline-block w-3 h-3 rounded-full ${
+              jobCapability === 'Available' ? 'bg-green-500' : 'bg-orange-500'
+            }`}
+          />
+          <span className="table-cell-text font-medium">{jobCapability}</span>
         </span>
       </td>
       <td className="p-4 text-secondary">
@@ -880,24 +915,28 @@ const AgentRow = ({
                 ? 'bg-gradient-to-r from-green-400 to-emerald-500 hover:from-green-500 hover:to-emerald-600 text-white focus:ring-green-300 cursor-pointer' 
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed focus:ring-gray-300'
             }`}
-            title={canSubmitTestJob ? 'Test A Job' : 'Test Job can only be submitted for Registered & Active agents'}
+            title={canSubmitTestJob ? 'Test A Job' : 'Only for Registered agents'}
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z"/>
             </svg>
           </button>
-          
-          {status === 'Registered' && (
-            <button 
-              onClick={() => onDeregisterClick(agent.agent_id)}
-              className="inline-flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-red-400 to-pink-500 hover:from-red-500 hover:to-pink-600 text-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-300 focus:ring-offset-1"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              <span className="text-xs font-semibold">Deregister</span>
-            </button>
-          )}
+          {/* Always show Deregister button, disable unless REGISTERED */}
+          <button 
+            onClick={() => canDeregister && onDeregisterClick(agent.agent_id)}
+            disabled={!canDeregister}
+            className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+              canDeregister
+                ? 'bg-gradient-to-r from-red-400 to-pink-500 hover:from-red-500 hover:to-pink-600 text-white focus:ring-red-300 cursor-pointer'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed focus:ring-gray-300'
+            }`}
+            title={canDeregister ? 'Deregister agent' : 'Can only deregister Registered agents'}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 0 0-1 1v3M4 7h16" />
+            </svg>
+            <span className="text-xs font-semibold">Deregister</span>
+          </button>
         </div>
       </td>
     </tr>

@@ -2,7 +2,14 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -44,6 +51,216 @@ var (
 	jobs   = make(map[string]*Job)
 	jobsMu sync.Mutex
 )
+
+// Secure registration functions
+func generatePrivateKey() (*rsa.PrivateKey, error) {
+	return rsa.GenerateKey(rand.Reader, 2048)
+}
+
+func generateCSR(privateKey *rsa.PrivateKey, agentID string) (string, error) {
+	template := x509.CertificateRequest{
+		Subject: pkix.Name{
+			CommonName:   agentID,
+			Organization: []string{"Agentic Agent"},
+		},
+		DNSNames: []string{agentID},
+	}
+
+	csrBytes, err := x509.CreateCertificateRequest(rand.Reader, &template, privateKey)
+	if err != nil {
+		return "", err
+	}
+
+	csrPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE REQUEST",
+		Bytes: csrBytes,
+	})
+
+	return string(csrPEM), nil
+}
+
+func saveCertificate(certificatePEM string, privateKey *rsa.PrivateKey, agentHome string) error {
+	certPath := filepath.Join(filepath.Dir(agentHome), "agent.crt")
+	keyPath := filepath.Join(filepath.Dir(agentHome), "agent.key")
+
+	// Save certificate
+	err := ioutil.WriteFile(certPath, []byte(certificatePEM), 0600)
+	if err != nil {
+		return err
+	}
+
+	// Save private key
+	keyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return err
+	}
+
+	keyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: keyBytes,
+	})
+
+	err = ioutil.WriteFile(keyPath, keyPEM, 0600)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("[go-agent] Certificate saved to %s\n", certPath)
+	fmt.Printf("[go-agent] Private key saved to %s\n", keyPath)
+	return nil
+}
+
+func loadCertificate(agentHome string) (string, error) {
+	certPath := filepath.Join(filepath.Dir(agentHome), "agent.crt")
+	certBytes, err := ioutil.ReadFile(certPath)
+	if err != nil {
+		return "", err
+	}
+	return string(certBytes), nil
+}
+
+func isCertificateValid(agentHome string) bool {
+	certPEM, err := loadCertificate(agentHome)
+	if err != nil {
+		return false
+	}
+
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		return false
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false
+	}
+
+	// Check if certificate is still valid (not expired)
+	return time.Now().Before(cert.NotAfter)
+}
+
+func secureRegister(agentID, agentName, selfURL, agentLabels, routerURL, agentHome string) bool {
+	fmt.Printf("[go-agent] Starting secure registration for agent %s\n", agentID)
+
+	// Check if we already have a valid certificate
+	if isCertificateValid(agentHome) {
+		fmt.Println("[go-agent] Valid certificate already exists, skipping registration")
+		return true
+	}
+
+	fmt.Println("[go-agent] No valid certificate found, proceeding with registration")
+
+	// Step 1: Announce to router
+	announceBody := map[string]interface{}{
+		"agent_id": agentID,
+		"name":     agentName,
+		"url":      selfURL,
+		"labels":   parseLabels(agentLabels),
+	}
+
+	fmt.Println("[go-agent] Announcing to router...")
+	client := &http.Client{Timeout: 10 * time.Second}
+	announceBytes, _ := json.Marshal(announceBody)
+	req, err := http.NewRequest("POST", routerURL+"/agents/announce", bytes.NewBuffer(announceBytes))
+	if err != nil {
+		fmt.Printf("[go-agent] Announce request creation failed: %v\n", err)
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("[go-agent] Announce request failed: %v\n", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		respBody, _ := ioutil.ReadAll(resp.Body)
+		fmt.Printf("[go-agent] Announce failed: %d %s\n", resp.StatusCode, string(respBody))
+		return false
+	}
+
+	var announceResp map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&announceResp); err != nil {
+		fmt.Printf("[go-agent] Failed to decode announce response: %v\n", err)
+		return false
+	}
+
+	otp, ok := announceResp["otp"].(string)
+	if !ok || otp == "" {
+		fmt.Println("[go-agent] No OTP received from announce")
+		return false
+	}
+
+	state, _ := announceResp["state"].(string)
+	fmt.Printf("[go-agent] Received OTP, state: %s\n", state)
+
+	// Step 2: Generate private key and CSR
+	fmt.Println("[go-agent] Generating private key and CSR...")
+	privateKey, err := generatePrivateKey()
+	if err != nil {
+		fmt.Printf("[go-agent] Private key generation failed: %v\n", err)
+		return false
+	}
+
+	csrPEM, err := generateCSR(privateKey, agentID)
+	if err != nil {
+		fmt.Printf("[go-agent] CSR generation failed: %v\n", err)
+		return false
+	}
+
+	// Step 3: Enroll with OTP and CSR
+	enrollBody := map[string]interface{}{
+		"agent_id": agentID,
+		"otp":      otp,
+		"csr":      csrPEM,
+	}
+
+	fmt.Println("[go-agent] Enrolling with CSR...")
+	enrollBytes, _ := json.Marshal(enrollBody)
+	req, err = http.NewRequest("POST", routerURL+"/agents/enroll", bytes.NewBuffer(enrollBytes))
+	if err != nil {
+		fmt.Printf("[go-agent] Enroll request creation failed: %v\n", err)
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err = client.Do(req)
+	if err != nil {
+		fmt.Printf("[go-agent] Enroll request failed: %v\n", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		respBody, _ := ioutil.ReadAll(resp.Body)
+		fmt.Printf("[go-agent] Enroll failed: %d %s\n", resp.StatusCode, string(respBody))
+		return false
+	}
+
+	var enrollResp map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&enrollResp); err != nil {
+		fmt.Printf("[go-agent] Failed to decode enroll response: %v\n", err)
+		return false
+	}
+
+	certificate, ok := enrollResp["certificate"].(string)
+	if !ok || certificate == "" {
+		fmt.Println("[go-agent] No certificate received from enroll")
+		return false
+	}
+
+	// Step 4: Save certificate and private key
+	if err := saveCertificate(certificate, privateKey, agentHome); err != nil {
+		fmt.Printf("[go-agent] Failed to save certificate: %v\n", err)
+		return false
+	}
+
+	state, _ = enrollResp["state"].(string)
+	fmt.Printf("[go-agent] Enrolled successfully, state: %s\n", state)
+	return true
+}
 
 func getEnv(key, def string) string {
 	v := os.Getenv(key)
@@ -87,9 +304,10 @@ func main() {
 	selfURL := getEnv("SELF_URL", "http://go_agent_vm1:8001")
 	heartbeatSeconds := getEnvInt("AGENT_HEARTBEAT_SECONDS", 10)
 	agentLabels := getEnv("AGENT_LABELS", "{\"os\":\"linux\",\"zone\":\"go\"}")
-	autoRegister := getEnvBool("AGENT_AUTO_REGISTER", true)
 
 	os.MkdirAll(agentHome, 0755)
+
+	fmt.Printf("[go-agent] Starting with config: agentID=%s, routerURL=%s, selfURL=%s\n", agentID, routerURL, selfURL)
 
 	// --- Reconciliation logic: scan job dirs and report to router ---
 	go func() {
@@ -207,10 +425,10 @@ func main() {
 		}
 	}()
 
-	// Auto-register and heartbeat
-	if autoRegister {
-		go autoRegisterForever(agentID, selfURL, agentLabels, agentToken, routerURL)
-	}
+	// Always attempt secure registration first, then start heartbeat
+	fmt.Printf("[go-agent] Starting registration goroutine for agent %s\n", agentID)
+	go autoRegisterForever(agentID, selfURL, agentLabels, agentToken, routerURL, agentHome)
+	fmt.Printf("[go-agent] Starting heartbeat goroutine for agent %s\n", agentID)
 	go heartbeatLoop(agentID, selfURL, agentToken, routerURL, heartbeatSeconds)
 
 	r := gin.Default()
@@ -407,43 +625,28 @@ func main() {
 	r.Run(":8001")
 }
 
-// Auto-register logic
-func autoRegisterForever(agentID, selfURL, agentLabels, agentToken, routerURL string) {
-	body := map[string]interface{}{
-		"agent_id": agentID,
-		"url":      selfURL,
-		"labels":   parseLabels(agentLabels),
+// Auto-register logic with secure registration only
+func autoRegisterForever(agentID, selfURL, agentLabels, agentToken, routerURL, agentHome string) {
+	// Try secure registration
+	ok := secureRegister(agentID, agentID, selfURL, agentLabels, routerURL, agentHome)
+	if ok {
+		fmt.Println("[go-agent] Secure registration completed")
+		return // Registration successful, no need to retry
+	} else {
+		fmt.Println("[go-agent] Secure registration failed, will retry")
 	}
-	headers := map[string]string{
-		"X-Agent-Token": agentToken,
-		"Content-Type":  "application/json",
-	}
-	for {
-		ok := autoRegisterOnce(body, headers, routerURL)
-		delay := 60
-		if !ok {
-			delay = 10
-		}
-		time.Sleep(time.Duration(delay) * time.Second)
-	}
-}
 
-func autoRegisterOnce(body map[string]interface{}, headers map[string]string, routerURL string) bool {
-	client := &http.Client{Timeout: 5 * time.Second}
-	b, _ := json.Marshal(body)
-	req, err := http.NewRequest("POST", routerURL+"/agents/register", bytes.NewBuffer(b))
-	if err != nil {
-		return false
+	// Retry loop for failed registration attempts
+	for {
+		time.Sleep(10 * time.Second) // Retry every 10 seconds until successful
+
+		ok = secureRegister(agentID, agentID, selfURL, agentLabels, routerURL, agentHome)
+		if ok {
+			fmt.Println("[go-agent] Secure registration completed on retry")
+			return // Success, exit the retry loop
+		}
+		fmt.Println("[go-agent] Secure registration retry failed, will continue retrying")
 	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode == 200
 }
 
 func parseLabels(s string) map[string]interface{} {

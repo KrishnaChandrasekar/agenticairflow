@@ -76,6 +76,10 @@ class AgenticRunOperator(BaseOperator):
             "route": ({"agent_id": self.agent_id} if self.agent_id else {"labels": labels}),
             "priority": self.priority,
         }
+        # Print and log the payload for debugging
+        import pprint
+        pprint.pprint(payload)
+        self.log.info("Payload sent to Router: %s", payload)
 
         r = requests.post(
             f"{router_url.rstrip('/')}/submit",

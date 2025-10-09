@@ -1,5 +1,6 @@
 
 from __future__ import annotations
+from datetime import datetime
 import json
 import os
 import shlex
@@ -8,6 +9,17 @@ import subprocess
 import threading
 import time
 from typing import Optional
+
+# Certificate generation utilities and secure registration setup
+try:
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+    print("[agent] Warning: cryptography library not available, secure registration disabled", flush=True)
 
 import psutil
 import requests
@@ -19,6 +31,7 @@ from flask import Flask, jsonify, request, send_file
 def _reconcile_and_report():
     """
     On agent startup, scan all job directories, check status, and report to router.
+    Also cleanup any orphaned jobs that are stuck in RUNNING state.
     """
     try:
         jobs = []
@@ -31,19 +44,35 @@ def _reconcile_and_report():
             status = "UNKNOWN"
             pid = None
             rc = None
+            
             if os.path.exists(pidp):
                 try:
                     pid = int(open(pidp).read().strip())
                 except Exception:
                     pid = None
-            if pid and _alive(pid):
-                status = "RUNNING"
-            elif os.path.exists(rcp):
+            
+            # Check if job already completed
+            if os.path.exists(rcp):
                 try:
                     rc = int(open(rcp).read().strip())
                 except Exception:
                     rc = 1
                 status = "SUCCEEDED" if rc == 0 else "FAILED"
+            # Check if job is actually running (with enhanced validation)
+            elif pid and _alive(pid, job_id):
+                status = "RUNNING"
+            # Job has PID but process is not the original one or doesn't exist
+            elif pid:
+                # This is an orphaned job - cleanup and mark as FAILED
+                _cleanup_orphaned_job(job_id, "Container restart detected - original process no longer exists")
+                status = "FAILED"
+                rc = 130  # Set rc to indicate terminated by signal
+            # No PID file exists - job never started properly
+            else:
+                _cleanup_orphaned_job(job_id, "No PID file found - job never started properly")
+                status = "FAILED"
+                rc = 255  # Set rc to indicate startup failure
+                
             jobs.append({"job_id": job_id, "status": status, "pid": pid, "rc": rc})
 
         # Report to router
@@ -64,10 +93,10 @@ def _reconcile_and_report():
 # =========================
 AGENT_HOME = os.environ.get("AGENT_HOME", "/app/agent_jobs")
 AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "agent-secret")
-AGENT_AUTO_REGISTER = os.environ.get("AGENT_AUTO_REGISTER","false").lower() in ("1","true","yes")
 HEARTBEAT_SECONDS = int(os.environ.get("AGENT_HEARTBEAT_SECONDS","10"))
 
-# Auto-register settings
+# Registration settings
+
 ROUTER_URL = os.environ.get("ROUTER_URL", "http://router:8000").rstrip("/")
 AGENT_ID = os.environ.get("AGENT_ID", "vm1")
 SELF_URL = os.environ.get("SELF_URL", "http://agent_vm1:8001")
@@ -75,6 +104,132 @@ try:
     AGENT_LABELS = json.loads(os.environ.get("AGENT_LABELS", '{"os":"linux","zone":"dev"}'))
 except Exception:
     AGENT_LABELS = {"os": "linux", "zone": "dev"}
+
+# Secure registration settings
+CERTIFICATE_PATH = os.path.join(AGENT_HOME, "..", "agent.crt")
+PRIVATE_KEY_PATH = os.path.join(AGENT_HOME, "..", "agent.key")
+
+try:
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+
+def generate_private_key():
+    if not CRYPTO_AVAILABLE:
+        raise Exception("cryptography library not available")
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+def generate_csr(private_key, agent_id: str) -> str:
+    if not CRYPTO_AVAILABLE:
+        raise Exception("cryptography library not available")
+    subject = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, agent_id),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Agentic Agent"),
+    ])
+    csr = x509.CertificateSigningRequestBuilder().subject_name(
+        subject
+    ).add_extension(
+        x509.SubjectAlternativeName([
+            x509.DNSName(agent_id),
+        ]),
+        critical=False,
+    ).sign(private_key, hashes.SHA256())
+    return csr.public_bytes(serialization.Encoding.PEM).decode()
+
+def save_certificate(certificate_pem: str, private_key):
+    with open(CERTIFICATE_PATH, 'w') as f:
+        f.write(certificate_pem)
+    private_key_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    with open(PRIVATE_KEY_PATH, 'wb') as f:
+        f.write(private_key_pem)
+    print(f"[agent] Certificate saved to {CERTIFICATE_PATH}", flush=True)
+    print(f"[agent] Private key saved to {PRIVATE_KEY_PATH}", flush=True)
+
+def load_certificate():
+    try:
+        with open(CERTIFICATE_PATH, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+def is_certificate_valid():
+    cert_pem = load_certificate()
+    if not cert_pem or not CRYPTO_AVAILABLE:
+        return False
+    try:
+        cert = x509.load_pem_x509_certificate(cert_pem.encode())
+        return datetime.utcnow() < cert.not_valid_after
+    except Exception:
+        return False
+
+def _secure_register():
+    if not CRYPTO_AVAILABLE:
+        print("[agent] Secure registration requires cryptography library", flush=True)
+        return False
+    if is_certificate_valid():
+        print("[agent] Valid certificate already exists, skipping registration", flush=True)
+        return True
+    try:
+        announce_body = {
+            "agent_id": AGENT_ID,
+            "name": AGENT_ID,
+            "url": SELF_URL,
+            "labels": AGENT_LABELS,
+        }
+        print("[agent] Announcing to router...", flush=True)
+        r = requests.post(f"{ROUTER_URL}/agents/announce", json=announce_body, timeout=10)
+        if r.status_code != 200:
+            print(f"[agent] Announce failed: {r.status_code} {r.text}", flush=True)
+            return False
+        announce_resp = r.json()
+        otp = announce_resp.get("otp")
+        if not otp:
+            print("[agent] No OTP received from announce", flush=True)
+            return False
+        print(f"[agent] Received OTP, state: {announce_resp.get('state')}", flush=True)
+        print("[agent] Generating private key and CSR...", flush=True)
+        private_key = generate_private_key()
+        csr_pem = generate_csr(private_key, AGENT_ID)
+        enroll_body = {
+            "agent_id": AGENT_ID,
+            "otp": otp,
+            "csr": csr_pem
+        }
+        print("[agent] Enrolling with CSR...", flush=True)
+        r = requests.post(f"{ROUTER_URL}/agents/enroll", json=enroll_body, timeout=10)
+        if r.status_code != 200:
+            print(f"[agent] Enroll failed: {r.status_code} {r.text}", flush=True)
+            return False
+        enroll_resp = r.json()
+        certificate = enroll_resp.get("certificate")
+        if not certificate:
+            print("[agent] No certificate received from enroll", flush=True)
+            return False
+        save_certificate(certificate, private_key)
+        print(f"[agent] Enrolled successfully, state: {enroll_resp.get('state')}", flush=True)
+        return True
+    except Exception as e:
+        print(f"[agent] Secure registration failed: {e}", flush=True)
+        return False
+
+def _auto_register_forever():
+    if not CRYPTO_AVAILABLE:
+        print("[agent] ERROR: Cryptography library required for secure registration", flush=True)
+        return
+    ok = _secure_register()
+    delay = 60 if ok else 10
+    while True:
+        time.sleep(delay)
+        ok = _secure_register()
+        delay = 60 if ok else 10
 
 # Use bash if available, otherwise sh
 SHELL = "/bin/bash" if shutil.which("bash") else "/bin/sh"
@@ -88,7 +243,11 @@ app = Flask(__name__)
 # =========================
 # Helpers
 # =========================
-def _alive(pid: int) -> bool:
+def _alive(pid: int, job_id: str = None) -> bool:
+    """
+    Check if a PID is alive and, if job_id is provided, verify it's the same process
+    that was originally started for this job (by comparing process start time).
+    """
     try:
         p = psutil.Process(pid)
         try:
@@ -96,6 +255,32 @@ def _alive(pid: int) -> bool:
                 return False
         except Exception:
             pass
+        
+        # If job_id is provided, validate this is the same process that was started
+        if job_id:
+            home = os.path.join(AGENT_HOME, job_id)
+            started_at_file = os.path.join(home, "started_at")
+            
+            if os.path.exists(started_at_file):
+                try:
+                    # Read job start time (Unix timestamp)
+                    with open(started_at_file, "r") as f:
+                        job_start_time = int(f.read().strip())
+                    
+                    # Get process start time
+                    process_start_time = int(p.create_time())
+                    
+                    # Allow some tolerance (5 seconds) for timing differences
+                    time_diff = abs(process_start_time - job_start_time)
+                    if time_diff > 5:
+                        print(f"[agent] PID {pid} for job {job_id} appears to be different process (time diff: {time_diff}s)", flush=True)
+                        return False
+                        
+                except Exception as e:
+                    print(f"[agent] Failed to validate PID {pid} for job {job_id}: {e}", flush=True)
+                    # If we can't validate, assume it's not the same process
+                    return False
+        
         return p.is_running()
     except Exception:
         return False
@@ -125,6 +310,37 @@ def _writeln(path: str, text: str, retries: int = 3):
 def _write_text(path: str, text: str):
     with open(path, "w", encoding="utf-8", errors="ignore") as f:
         f.write(text)
+
+
+def _cleanup_orphaned_job(job_id: str, reason: str = "Process no longer exists"):
+    """
+    Mark an orphaned job as FAILED and create the necessary completion files.
+    """
+    try:
+        home = os.path.join(AGENT_HOME, job_id)
+        logp = os.path.join(home, "run.log")
+        rcp = os.path.join(home, "rc")
+        finished_at_file = os.path.join(home, "finished_at")
+        statusp = os.path.join(home, "status.txt")
+        
+        # Write failure reason to log
+        _writeln(logp, f"[agent] Job marked as FAILED: {reason}\n")
+        _writeln(logp, f"[agent] status=FAILED\n")
+        
+        # Create rc file with error code
+        _write_text(rcp, "130")  # 130 = process terminated by signal
+        
+        # Create finished_at timestamp
+        current_time = str(int(time.time()))
+        _write_text(finished_at_file, current_time)
+        
+        # Update status file
+        _write_text(statusp, "FAILED")
+        
+        print(f"[agent] Cleaned up orphaned job {job_id}: {reason}", flush=True)
+        
+    except Exception as e:
+        print(f"[agent] Failed to cleanup orphaned job {job_id}: {e}", flush=True)
 
 
 def _auto_register_forever():
@@ -194,8 +410,6 @@ def _auto_register_once():
 # on startup
 _send_hello()
 _reconcile_and_report()
-if AGENT_AUTO_REGISTER:
-    _auto_register_once()
 import threading as _t
 _t.Thread(target=_heartbeat_loop, daemon=True).start()
 
@@ -262,7 +476,7 @@ def run():
     # Use Unix timestamp to avoid quoting issues, convert to readable format later
     # Fix: Use shlex.quote for the entire command to avoid nested quote issues
     core = f"cd {shlex.quote(home)} || exit 255; date -u +%s > {shlex.quote(start_time_file)}; {cmd}; RC=$?; echo $RC > {shlex.quote(rcp)}; date -u +%s > {shlex.quote(finish_time_file)}; exit $RC"
-    launch = f"nohup bash -c {shlex.quote(core)} >> {shlex.quote(logp)} 2>&1 & echo $! > {shlex.quote(pidp)}"
+    launch = f"setsid nohup bash -c {shlex.quote(core)} >> {shlex.quote(logp)} 2>&1 & echo $! > {shlex.quote(pidp)}"
     if run_as:
         launch = f"sudo -u {shlex.quote(run_as)} {launch}"
 
@@ -356,8 +570,8 @@ def status(job_id: str):
             response["finished_at"] = finished_at
         return jsonify(response)
 
-    # If no rc yet, only then check pid/alive
-    if pid and _alive(pid):
+    # If no rc yet, only then check pid/alive with job validation
+    if pid and _alive(pid, job_id):
         if _last_status() != "RUNNING":
             _writeln(logp, f"[agent] status=RUNNING\n")
             _write_status("RUNNING")
@@ -368,6 +582,26 @@ def status(job_id: str):
         if started_at:
             response["started_at"] = started_at
         return jsonify(response)
+    
+    # If we have a PID but process is not alive or not the same process, cleanup
+    elif pid:
+        _cleanup_orphaned_job(job_id, "Process validation failed - likely container restart")
+        # Re-read the rc file that was just created
+        if os.path.exists(rcp):
+            try:
+                rc = int(open(rcp, "r", encoding="utf-8", errors="ignore").read().strip())
+            except Exception:
+                rc = 130
+            status_val = "FAILED"
+            
+            response = {"status": status_val, "job_id": job_id, "log_path": logp, "rc": rc}
+            started_at = _read_timestamp(start_time_file)
+            finished_at = _read_timestamp(finish_time_file)
+            if started_at:
+                response["started_at"] = started_at
+            if finished_at:
+                response["finished_at"] = finished_at
+            return jsonify(response)
 
     # Neither pid nor rc present → consider it a failed spawn and surface that
     return jsonify(
@@ -386,15 +620,122 @@ def logs(job_id: str):
     return send_file(logp, mimetype="text/plain")
 
 
+
 # =========================
-# Startup: auto-register
+# Secure registration logic
 # =========================
-def _start_autoreg():
-    t = threading.Thread(target=_auto_register_forever, name="auto-register", daemon=True)
-    t.start()
+try:
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+    print("[agent] Warning: cryptography library not available, secure registration disabled", flush=True)
+
+CERTIFICATE_PATH = os.path.join(AGENT_HOME, "..", "agent.crt")
+PRIVATE_KEY_PATH = os.path.join(AGENT_HOME, "..", "agent.key")
+
+def generate_private_key():
+    if not CRYPTO_AVAILABLE:
+        raise Exception("cryptography library not available")
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+def generate_csr(private_key, agent_id: str) -> str:
+    if not CRYPTO_AVAILABLE:
+        raise Exception("cryptography library not available")
+    subject = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, agent_id),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Agentic Agent"),
+    ])
+    csr = x509.CertificateSigningRequestBuilder().subject_name(subject).add_extension(
+        x509.SubjectAlternativeName([x509.DNSName(agent_id)]), critical=False
+    ).sign(private_key, hashes.SHA256())
+    return csr.public_bytes(serialization.Encoding.PEM).decode()
+
+def save_certificate(certificate_pem: str, private_key):
+    with open(CERTIFICATE_PATH, 'w') as f:
+        f.write(certificate_pem)
+    private_key_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    with open(PRIVATE_KEY_PATH, 'wb') as f:
+        f.write(private_key_pem)
+    print(f"[agent] Certificate saved to {CERTIFICATE_PATH}", flush=True)
+    print(f"[agent] Private key saved to {PRIVATE_KEY_PATH}", flush=True)
+
+def load_certificate():
+    try:
+        with open(CERTIFICATE_PATH, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+def is_certificate_valid():
+    cert_pem = load_certificate()
+    if not cert_pem or not CRYPTO_AVAILABLE:
+        return False
+    try:
+        cert = x509.load_pem_x509_certificate(cert_pem.encode())
+        from datetime import datetime
+        return datetime.utcnow() < cert.not_valid_after
+    except Exception:
+        return False
 
 
-_start_autoreg()
+def _secure_register():
+    if not CRYPTO_AVAILABLE:
+        print("[agent] Secure registration requires cryptography library", flush=True)
+        return False
+    if is_certificate_valid():
+        print("[agent] Valid certificate already exists, skipping registration", flush=True)
+        return True
+    try:
+        announce_body = {
+            "agent_id": AGENT_ID,
+            "name": AGENT_ID,
+            "url": SELF_URL,
+            "labels": AGENT_LABELS,
+        }
+        print("[agent] Announcing to router...", flush=True)
+        r = requests.post(f"{ROUTER_URL}/agents/announce", json=announce_body, timeout=10)
+        if r.status_code != 200:
+            print(f"[agent] Announce failed: {r.status_code} {r.text}", flush=True)
+            return False
+        announce_resp = r.json()
+        otp = announce_resp.get("otp")
+        if not otp:
+            print("[agent] No OTP received from announce", flush=True)
+            return False
+        print(f"[agent] Received OTP, state: {announce_resp.get('state')}", flush=True)
+        private_key = generate_private_key()
+        csr_pem = generate_csr(private_key, AGENT_ID)
+        enroll_body = {
+            "agent_id": AGENT_ID,
+            "otp": otp,
+            "csr": csr_pem
+        }
+        print("[agent] Enrolling with CSR...", flush=True)
+        r = requests.post(f"{ROUTER_URL}/agents/enroll", json=enroll_body, timeout=10)
+        if r.status_code != 200:
+            print(f"[agent] Enroll failed: {r.status_code} {r.text}", flush=True)
+            return False
+        enroll_resp = r.json()
+        certificate = enroll_resp.get("certificate")
+        if not certificate:
+            print("[agent] No certificate received from enroll", flush=True)
+            return False
+        save_certificate(certificate, private_key)
+        print(f"[agent] Enrolled successfully, state: {enroll_resp.get('state')}", flush=True)
+        return True
+    except Exception as e:
+        print(f"[agent] Secure registration failed: {e}", flush=True)
+        return False
+
+_secure_register()  # Start secure registration immediately on agent startup
 
 # =========================
 # Main

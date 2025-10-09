@@ -1,5 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { fmtDate, fmtAgo, includesAll, matchLabels } from '../utils/api';
+import AirflowIcon from './AirflowIcon';
+import FlaskIcon from './FlaskIcon';
 
 // Utility function to format execution time duration
 const formatExecutionTime = (startedAt, finishedAt, serverExecutionTime) => {
@@ -33,13 +35,42 @@ const formatExecutionTime = (startedAt, finishedAt, serverExecutionTime) => {
   }
 };
 
+// Helper function to convert execution time string to seconds
+const convertExecutionTimeToSeconds = (timeStr) => {
+  if (!timeStr || timeStr === '-') return NaN;
+  
+  let totalSeconds = 0;
+  
+  // Match days (e.g., "2d")
+  const daysMatch = timeStr.match(/(\d+)d/);
+  if (daysMatch) totalSeconds += parseInt(daysMatch[1]) * 24 * 60 * 60;
+  
+  // Match hours (e.g., "3h")
+  const hoursMatch = timeStr.match(/(\d+)h/);
+  if (hoursMatch) totalSeconds += parseInt(hoursMatch[1]) * 60 * 60;
+  
+  // Match minutes (e.g., "45m")
+  const minutesMatch = timeStr.match(/(\d+)m/);
+  if (minutesMatch) totalSeconds += parseInt(minutesMatch[1]) * 60;
+  
+  // Match seconds (e.g., "30s")
+  const secondsMatch = timeStr.match(/(\d+)s/);
+  if (secondsMatch) totalSeconds += parseInt(secondsMatch[1]);
+  
+  return totalSeconds;
+};
+
 const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTimeRangeClear, loading }) => {
   const [filters, setFilters] = useState({
     job_id: '',
+    dag_id: '',
+    task_id: '',
     status: '',
     agent_id: '',
     rc: '',
-    labels: ''
+    labels: '',
+    execution_time_operator: '',
+    execution_time_value: ''
   });
   
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' });
@@ -47,8 +78,10 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
   const [pageSize, setPageSize] = useState(15);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [pageSizeDropdownOpen, setPageSizeDropdownOpen] = useState(false);
+  const [executionTimeDropdownOpen, setExecutionTimeDropdownOpen] = useState(false);
   const statusDropdownRef = useRef(null);
   const pageSizeDropdownRef = useRef(null);
+  const executionTimeDropdownRef = useRef(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -59,13 +92,16 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
       if (pageSizeDropdownRef.current && !pageSizeDropdownRef.current.contains(event.target)) {
         setPageSizeDropdownOpen(false);
       }
+      if (executionTimeDropdownRef.current && !executionTimeDropdownRef.current.contains(event.target)) {
+        setExecutionTimeDropdownOpen(false);
+      }
     };
 
-    if (statusDropdownOpen || pageSizeDropdownOpen) {
+    if (statusDropdownOpen || pageSizeDropdownOpen || executionTimeDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [statusDropdownOpen, pageSizeDropdownOpen]);
+  }, [statusDropdownOpen, pageSizeDropdownOpen, executionTimeDropdownOpen]);
 
   // Filter and sort jobs
   const filteredJobs = useMemo(() => {
@@ -74,6 +110,12 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
     // Apply column filters
     if (filters.job_id) {
       filtered = filtered.filter(j => includesAll(j.job_id || '', filters.job_id));
+    }
+    if (filters.dag_id) {
+      filtered = filtered.filter(j => includesAll(j.dag_id || '', filters.dag_id));
+    }
+    if (filters.task_id) {
+      filtered = filtered.filter(j => includesAll(j.task_id || '', filters.task_id));
     }
     if (filters.status) {
       filtered = filtered.filter(j => String(j.status || '').toUpperCase() === String(filters.status).toUpperCase());
@@ -86,6 +128,25 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
     }
     if (filters.labels) {
       filtered = filtered.filter(j => matchLabels(j.labels, filters.labels));
+    }
+    if (filters.execution_time_operator && filters.execution_time_value) {
+      filtered = filtered.filter(j => {
+        const executionTime = formatExecutionTime(j.started_at, j.finished_at, j.execution_time);
+        if (executionTime === '-') return false;
+        
+        // Convert execution time to seconds for comparison
+        const timeInSeconds = convertExecutionTimeToSeconds(executionTime);
+        const filterValue = parseInt(filters.execution_time_value);
+        
+        if (isNaN(timeInSeconds) || isNaN(filterValue)) return true;
+        
+        switch (filters.execution_time_operator) {
+          case 'gt': return timeInSeconds > filterValue;
+          case 'lt': return timeInSeconds < filterValue;
+          case 'eq': return timeInSeconds === filterValue;
+          default: return true;
+        }
+      });
     }
     
     // Apply time range filter
@@ -166,10 +227,14 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
   const handleClearFilters = useCallback(() => {
     setFilters({
       job_id: '',
+      dag_id: '',
+      task_id: '',
       status: '',
       agent_id: '',
       rc: '',
-      labels: ''
+      labels: '',
+      execution_time_operator: '',
+      execution_time_value: ''
     });
     setPage(1);
   }, []);
@@ -198,6 +263,13 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
     { value: 'FAILED', label: 'FAILED' }
   ];
 
+  const executionTimeOperators = [
+    { value: '', label: 'No filter' },
+    { value: 'gt', label: '>' },
+    { value: 'lt', label: '<' },
+    { value: 'eq', label: '=' }
+  ];
+
   const handleStatusSelect = (value) => {
     handleFilterChange('status', value);
     setStatusDropdownOpen(false);
@@ -206,6 +278,18 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
   const getStatusLabel = () => {
     const option = statusOptions.find(opt => opt.value === filters.status);
     return option ? option.label : 'All statuses';
+  };
+
+  const getExecutionTimeLabel = () => {
+    if (!filters.execution_time_operator) return 'No filter';
+    const operator = executionTimeOperators.find(op => op.value === filters.execution_time_operator);
+    const operatorLabel = operator ? operator.label : 'No filter';
+    return filters.execution_time_value ? `${operatorLabel} ${filters.execution_time_value}s` : operatorLabel;
+  };
+
+  const handleExecutionTimeOperatorSelect = (operator) => {
+    handleFilterChange('execution_time_operator', operator);
+    setExecutionTimeDropdownOpen(false);
   };
 
   if (loading) {
@@ -339,10 +423,7 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
           <thead className="sticky top-0 z-10">
             {/* Header row */}
             <tr className="bg-gradient-to-r from-slate-50 to-blue-50 border-b-2 border-blue-200">
-              <th 
-                className="text-left p-4 cursor-pointer table-header-text table-header-hover group" 
-                onClick={() => handleSort('job_id')}
-              >
+              <th className="text-left p-4 cursor-pointer table-header-text table-header-hover group" onClick={() => handleSort('job_id')}>
                 <div className="flex items-center gap-2">
                   <svg className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a1.994 1.994 0 01-1.414.586H7a4 4 0 01-4-4V7a4 4 0 014-4z" />
@@ -351,10 +432,25 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
                   <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('job_id')}</span>
                 </div>
               </th>
-              <th 
-                className="text-left p-4 cursor-pointer table-header-text table-header-hover group" 
-                onClick={() => handleSort('status')}
-              >
+              <th className="text-left p-4 cursor-pointer table-header-text table-header-hover group" onClick={() => handleSort('dag_id')}>
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                  <span className="font-semibold text-white group-hover:text-white transition-colors">DAG ID</span>
+                  <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('dag_id')}</span>
+                </div>
+              </th>
+              <th className="text-left p-4 cursor-pointer table-header-text table-header-hover group" onClick={() => handleSort('task_id')}>
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                  </svg>
+                  <span className="font-semibold text-white group-hover:text-white transition-colors">Task ID</span>
+                  <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('task_id')}</span>
+                </div>
+              </th>
+              <th className="text-left p-4 cursor-pointer table-header-text table-header-hover group" onClick={() => handleSort('status')}>
                 <div className="flex items-center gap-2">
                   <svg className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -363,10 +459,7 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
                   <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('status')}</span>
                 </div>
               </th>
-              <th 
-                className="text-left p-4 cursor-pointer table-header-text table-header-hover group" 
-                onClick={() => handleSort('agent_id')}
-              >
+              <th className="text-left p-4 cursor-pointer table-header-text table-header-hover group" onClick={() => handleSort('agent_id')}>
                 <div className="flex items-center gap-2">
                   <svg className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -375,22 +468,7 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
                   <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('agent_id')}</span>
                 </div>
               </th>
-              <th 
-                className="text-left p-4 cursor-pointer table-header-text table-header-hover group w-20" 
-                onClick={() => handleSort('rc')}
-              >
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z" />
-                  </svg>
-                  <span className="font-semibold text-white group-hover:text-white transition-colors">RC</span>
-                  <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('rc')}</span>
-                </div>
-              </th>
-              <th 
-                className="text-left p-4 cursor-pointer table-header-text table-header-hover group" 
-                onClick={() => handleSort('execution_time')}
-              >
+              <th className="text-left p-4 cursor-pointer table-header-text table-header-hover group" onClick={() => handleSort('execution_time')}>
                 <div className="flex items-center gap-2">
                   <svg className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -399,36 +477,13 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
                   <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('execution_time')}</span>
                 </div>
               </th>
-              <th 
-                className="text-left p-4 cursor-pointer table-header-text table-header-hover group" 
-                onClick={() => handleSort('created_at')}
-              >
+              <th className="text-left p-4 cursor-pointer table-header-text table-header-hover group" onClick={() => handleSort('created_at')}>
                 <div className="flex items-center gap-2">
                   <svg className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <span className="font-semibold text-white group-hover:text-white transition-colors">Created</span>
                   <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('created_at')}</span>
-                </div>
-              </th>
-              <th 
-                className="text-left p-4 cursor-pointer table-header-text table-header-hover group" 
-                onClick={() => handleSort('updated_at')}
-              >
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <span className="font-semibold text-white group-hover:text-white transition-colors">Updated</span>
-                  <span className="text-caption text-blue-600 group-hover:text-blue-200 transition-colors font-bold">{getSortIndicator('updated_at')}</span>
-                </div>
-              </th>
-              <th className="text-left p-4 table-header-text">
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a1.994 1.994 0 01-1.414.586H7a4 4 0 01-4-4V7a4 4 0 014-4z" />
-                  </svg>
-                  <span className="font-semibold text-white">Labels</span>
                 </div>
               </th>
               <th className="text-left p-4 table-header-text">
@@ -446,32 +501,22 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
             <tr className="bg-gradient-to-r from-blue-25 to-indigo-25 border-b-2 border-blue-100">
               <th className="p-3">
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a1.994 1.994 0 01-1.414.586H7a4 4 0 01-4-4V7a4 4 0 014-4z" />
-                    </svg>
-                  </div>
-                  <input 
-                    value={filters.job_id}
-                    onChange={(e) => handleFilterChange('job_id', e.target.value)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" 
-                    placeholder="Filter job ID" 
-                  />
+                  <input value={filters.job_id} onChange={(e) => handleFilterChange('job_id', e.target.value)} className="border border-blue-200 rounded-lg pl-3 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" placeholder="Filter job ID" />
+                </div>
+              </th>
+              <th className="p-3">
+                <div className="relative">
+                  <input value={filters.dag_id || ''} onChange={(e) => handleFilterChange('dag_id', e.target.value)} className="border border-blue-200 rounded-lg pl-3 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" placeholder="Filter DAG ID" />
+                </div>
+              </th>
+              <th className="p-3">
+                <div className="relative">
+                  <input value={filters.task_id || ''} onChange={(e) => handleFilterChange('task_id', e.target.value)} className="border border-blue-200 rounded-lg pl-3 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" placeholder="Filter Task ID" />
                 </div>
               </th>
               <th className="p-3">
                 <div className="relative" ref={statusDropdownRef}>
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
-                    </svg>
-                  </div>
-                  <button
-                    onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-10 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md text-left"
-                  >
-                    {getStatusLabel()}
-                  </button>
+                  <button onClick={() => setStatusDropdownOpen(!statusDropdownOpen)} className="border border-blue-200 rounded-lg pl-3 pr-10 py-2.5 w-full text-sm text-gray-900 bg-white/80 hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md text-left">{getStatusLabel()}</button>
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none z-10">
                     <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${statusDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -480,17 +525,7 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
                   {statusDropdownOpen && (
                     <div className="absolute top-full left-0 right-0 mt-1 bg-gradient-to-r from-blue-25 to-indigo-25 border border-blue-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto backdrop-blur-sm">
                       {statusOptions.map((option) => (
-                        <button
-                          key={option.value}
-                          onClick={() => handleStatusSelect(option.value)}
-                          className={`w-full text-left px-4 py-2.5 text-sm transition-all duration-150 hover:bg-blue-100/60 hover:text-blue-900 ${
-                            filters.status === option.value 
-                              ? 'bg-blue-200/70 text-blue-900 font-medium' 
-                              : 'text-gray-800'
-                          }`}
-                        >
-                          {option.label}
-                        </button>
+                        <button key={option.value} onClick={() => handleStatusSelect(option.value)} className={`w-full text-left px-4 py-2.5 text-sm transition-all duration-150 hover:bg-blue-100/60 hover:text-blue-900 ${filters.status === option.value ? 'bg-blue-200/70 text-blue-900 font-medium' : 'text-gray-800'}`}>{option.label}</button>
                       ))}
                     </div>
                   )}
@@ -498,82 +533,42 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
               </th>
               <th className="p-3">
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                    </svg>
-                  </div>
-                  <input 
-                    value={filters.agent_id}
-                    onChange={(e) => handleFilterChange('agent_id', e.target.value)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" 
-                    placeholder="Filter agent" 
-                  />
+                  <input value={filters.agent_id} onChange={(e) => handleFilterChange('agent_id', e.target.value)} className="border border-blue-200 rounded-lg pl-3 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" placeholder="Filter agent" />
                 </div>
               </th>
               <th className="p-3">
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H7a2 0 0 0-2 2v14a2 2 0 0 0 2 2z" />
-                    </svg>
+                <div className="flex gap-2" ref={executionTimeDropdownRef}>
+                  <div className="relative flex-1">
+                    <button onClick={() => setExecutionTimeDropdownOpen(!executionTimeDropdownOpen)} className="border border-blue-200 rounded-lg pl-3 pr-10 py-2.5 w-full text-sm text-gray-900 bg-white/80 hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md text-left">{getExecutionTimeLabel()}</button>
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none z-10">
+                      <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${executionTimeDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                    {executionTimeDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-gradient-to-r from-blue-25 to-indigo-25 border border-blue-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto backdrop-blur-sm">
+                        {executionTimeOperators.map((operator) => (
+                          <button key={operator.value} onClick={() => handleExecutionTimeOperatorSelect(operator.value)} className={`w-full text-left px-4 py-2.5 text-sm transition-all duration-150 hover:bg-blue-100/60 hover:text-blue-900 ${filters.execution_time_operator === operator.value ? 'bg-blue-200/70 text-blue-900 font-medium' : 'text-gray-800'}`}>{operator.label}</button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <input 
-                    value={filters.rc}
-                    onChange={(e) => handleFilterChange('rc', e.target.value)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" 
-                    placeholder="e.g. 0" 
-                    style={{ minWidth: '100px' }}
-                  />
-                </div>
-              </th>
-              <th className="p-3">
-                <div className="flex items-center justify-center h-11">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-amber-100 to-orange-100 flex items-center justify-center">
-                    <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </div>
+                  {filters.execution_time_operator && (
+                    <input type="number" min="0" value={filters.execution_time_value} onChange={(e) => handleFilterChange('execution_time_value', e.target.value)} className="border border-blue-200 rounded-lg px-3 py-2.5 w-20 text-sm text-gray-900 bg-white/80 hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" placeholder="sec" />
+                  )}
                 </div>
               </th>
               <th className="p-3">
                 <div className="flex items-center justify-center h-11">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-100 to-indigo-100 flex items-center justify-center">
                     <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
                 </div>
               </th>
               <th className="p-3">
-                <div className="flex items-center justify-center h-11">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-100 to-indigo-100 flex items-center justify-center">
-                    <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 0 0 4.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 0 1-15.357-2m15.357 2H15" />
-                    </svg>
-                  </div>
-                </div>
-              </th>
-              <th className="p-3">
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a1.994 1.994 0 01-1.414.586H7a4 4 0 01-4-4V7a4 4 0 014-4z" />
-                    </svg>
-                  </div>
-                  <input 
-                    value={filters.labels}
-                    onChange={(e) => handleFilterChange('labels', e.target.value)}
-                    className="border border-blue-200 rounded-lg pl-10 pr-3 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 placeholder-gray-400 shadow-sm hover:shadow-md" 
-                    placeholder='key or "k:v"' 
-                  />
-                </div>
-              </th>
-              <th className="p-3">
-                <button 
-                  onClick={handleClearFilters}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-red-700 bg-gradient-to-r from-red-50 to-pink-50 border-2 border-red-200 rounded-lg hover:from-red-100 hover:to-pink-100 hover:border-red-300 transition-all duration-200 shadow-sm hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-300 backdrop-blur-sm"
-                >
+                <button onClick={handleClearFilters} className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-red-700 bg-gradient-to-r from-red-50 to-pink-50 border-2 border-red-200 rounded-lg hover:from-red-100 hover:to-pink-100 hover:border-red-300 transition-all duration-200 shadow-sm hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-300 backdrop-blur-sm">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16" />
                   </svg>
@@ -600,102 +595,82 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
               </tr>
             ) : (
               paginatedJobs.jobs.map(job => (
-                <JobRow 
-                  key={job.job_id} 
-                  job={job} 
-                  timezone={timezone} 
-                  onJobClick={onJobClick}
-                />
+                <tr className="border-b border-slate-200 hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 hover:shadow-sm transition-all duration-200 group" key={job.job_id}>
+                  <td className="p-4 table-cell-mono group-hover:text-slate-900">{job.job_id}</td>
+                  <td className="p-4 table-cell-mono group-hover:text-slate-900">
+                    <div className="flex items-center gap-2">
+                      {job.dag_id && job.dag_id !== "-" && job.dag_id !== "Not Applicable" && (
+                        <AirflowIcon />
+                      )}
+                      {job.dag_id === "Not Applicable" && (
+                        <FlaskIcon className="w-4 h-4 text-orange-500" />
+                      )}
+                      <span>{job.dag_id || "-"}</span>
+                    </div>
+                  </td>
+                  <td className="p-4 table-cell-mono group-hover:text-slate-900">{job.task_id || "-"}</td>
+                  <td className="p-4">
+                    <span className={`inline-flex items-center px-2.5 py-1.5 rounded-full text-xs font-semibold shadow-sm status-chip-${job.status}`}>
+                      {job.status === 'SUCCEEDED' && (
+                        <svg className="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 0 1 0 1.414l-8 8a1 1 0 0 1-1.414 0l-4-4a1 1 0 0 1 1.414-1.414L8 12.586l7.293-7.293a1 1 0 0 1 1.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      {job.status === 'FAILED' && (
+                        <svg className="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      {job.status === 'RUNNING' && (
+                        <div className="w-2.5 h-2.5 mr-1.5 rounded-full bg-current animate-pulse"></div>
+                      )}
+                      {job.status === 'QUEUED' && (
+                        <svg className="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm1-12a1 1 0 1 0-2 0v4a1 1 0 0 0.293.707l2.828 2.829a1 1 0 1 0 1.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      {job.status === 'PENDING_AGENT_SYNC' && (
+                        <svg className="w-3 h-3 mr-1.5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                          <circle cx="10" cy="10" r="8" fill="#FDE68A" />
+                          <path fillRule="evenodd" d="M10 6a1 1 0 0 1 1 1v3a1 1 0 0 1-2 0V7a1 1 0 0 1 1-1zm0 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2z" clipRule="evenodd" fill="#B45309" />
+                        </svg>
+                      )}
+                      <span className="status-text">{job.status}</span>
+                    </span>
+                  </td>
+                  <td className="p-4 table-cell-mono group-hover:text-slate-900">{job.agent_id || "-"}</td>
+                  <td className="p-4 text-center">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-body-large font-medium text-slate-700 group-hover:text-slate-900">
+                        {formatExecutionTime(job.started_at, job.finished_at, job.execution_time)}
+                      </span>
+                      {job.status === 'RUNNING' && job.started_at && (
+                        <span className="text-xs text-amber-600 font-medium animate-pulse">Running</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="p-4 text-secondary">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-body-large font-medium">{fmtDate(job.created_at, timezone)}</span>
+                      <span className="text-body text-tertiary">{fmtAgo(job.created_at)}</span>
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <button onClick={() => onJobClick(job.job_id)} className="inline-flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white btn-text-small rounded-lg shadow-sm hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      <span>View Details</span>
+                    </button>
+                  </td>
+                </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
     </div>
-  );
-};
-
-const JobRow = ({ job, timezone, onJobClick }) => {
-  return (
-    <tr className="border-b border-slate-200 hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-indigo-50/50 hover:shadow-sm transition-all duration-200 group">
-      <td className="p-4 table-cell-mono group-hover:text-slate-900">{job.job_id}</td>
-      <td className="p-4">
-        <span className={`inline-flex items-center px-2.5 py-1.5 rounded-full text-xs font-semibold shadow-sm status-chip-${job.status}`}>
-          {job.status === 'SUCCEEDED' && (
-            <svg className="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 0 1 0 1.414l-8 8a1 1 0 0 1-1.414 0l-4-4a1 1 0 0 1 1.414-1.414L8 12.586l7.293-7.293a1 1 0 0 1 1.414 0z" clipRule="evenodd" />
-            </svg>
-          )}
-          {job.status === 'FAILED' && (
-            <svg className="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z" clipRule="evenodd" />
-            </svg>
-          )}
-          {job.status === 'RUNNING' && (
-            <div className="w-2.5 h-2.5 mr-1.5 rounded-full bg-current animate-pulse"></div>
-          )}
-          {job.status === 'QUEUED' && (
-            <svg className="w-3 h-3 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm1-12a1 1 0 1 0-2 0v4a1 1 0 0 0.293.707l2.828 2.829a1 1 0 1 0 1.415-1.415L11 9.586V6z" clipRule="evenodd" />
-            </svg>
-          )}
-          <span className="status-text">{job.status}</span>
-        </span>
-      </td>
-      <td className="p-4 table-cell-mono group-hover:text-slate-900">{job.agent_id || "-"}</td>
-      <td className="p-4 text-center table-cell-text font-medium group-hover:text-slate-900">{job.rc ?? "-"}</td>
-      <td className="p-4 text-center">
-        <div className="flex flex-col gap-1">
-          <span className="text-body-large font-medium text-slate-700 group-hover:text-slate-900">
-            {formatExecutionTime(job.started_at, job.finished_at, job.execution_time)}
-          </span>
-          {job.status === 'RUNNING' && job.started_at && (
-            <span className="text-xs text-amber-600 font-medium animate-pulse">Running</span>
-          )}
-        </div>
-      </td>
-      <td className="p-4 text-secondary">
-        <div className="flex flex-col gap-1">
-          <span className="text-body-large font-medium">{fmtDate(job.created_at, timezone)}</span>
-          <span className="text-body text-tertiary">{fmtAgo(job.created_at)}</span>
-        </div>
-      </td>
-      <td className="p-4 text-secondary">
-        <div className="flex flex-col gap-1">
-          <span className="text-body-large font-medium">{fmtDate(job.updated_at, timezone)}</span>
-          <span className="text-body text-tertiary">{fmtAgo(job.updated_at)}</span>
-        </div>
-      </td>
-      <td className="p-4">
-        <div className="flex flex-wrap gap-1.5">
-          {Object.entries(job.labels || {}).length > 0 ? (
-            Object.entries(job.labels || {}).map(([key, value]) => (
-              <span 
-                key={key} 
-                className="inline-flex items-center px-2 py-1 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md status-text text-blue-800 shadow-sm"
-              >
-                <span className="text-blue-600 font-bold">{key.replace(/_/g, '-').toUpperCase()}:</span>
-                <span className="ml-1 font-bold">{value.toUpperCase()}</span>
-              </span>
-            ))
-          ) : (
-            <span className="text-tertiary text-body">-</span>
-          )}
-        </div>
-      </td>
-      <td className="p-4">
-        <button 
-          onClick={() => onJobClick(job.job_id)}
-          className="inline-flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white btn-text-small rounded-lg shadow-sm hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-1"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-          </svg>
-          <span>View Details</span>
-        </button>
-      </td>
-    </tr>
   );
 };
 

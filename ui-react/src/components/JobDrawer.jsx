@@ -129,12 +129,28 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
     }
   };
 
+
   const handleCopyJobId = async () => {
     try {
       await navigator.clipboard.writeText(jobId);
-      // Could add visual feedback here
     } catch (err) {
       console.error('Failed to copy job ID:', err);
+    }
+  };
+
+  const handleCopyDagId = async () => {
+    try {
+      await navigator.clipboard.writeText(combinedJob.dag_id || '');
+    } catch (err) {
+      console.error('Failed to copy DAG ID:', err);
+    }
+  };
+
+  const handleCopyTaskId = async () => {
+    try {
+      await navigator.clipboard.writeText(combinedJob.task_id || '');
+    } catch (err) {
+      console.error('Failed to copy Task ID:', err);
     }
   };
 
@@ -196,6 +212,8 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
                     Job Details
                   </h4>
                   <div className="space-y-3 text-body-large">
+
+                    {/* Job ID */}
                     <div className="flex items-center gap-2">
                       <span className="form-label text-body-large font-semibold min-w-[80px]">Job ID:</span>
                       <div className="flex items-center gap-2">
@@ -211,9 +229,50 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
                         </button>
                       </div>
                     </div>
+
+                    {/* DAG ID */}
+                    <div className="flex items-center gap-2">
+                      <span className="form-label text-body-large font-semibold min-w-[80px]">DAG ID:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-mono-large bg-blue-50 px-2 py-1 rounded border font-mono">{combinedJob.dag_id || '-'}</span>
+                        {combinedJob.dag_id && combinedJob.dag_id !== 'Not Applicable' && (
+                          <button
+                            onClick={handleCopyDagId}
+                            className="inline-flex items-center p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-all duration-200"
+                            title="Copy DAG ID"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Task ID */}
+                    <div className="flex items-center gap-2">
+                      <span className="form-label text-body-large font-semibold min-w-[80px]">Task ID:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-mono-large bg-blue-50 px-2 py-1 rounded border font-mono">{combinedJob.task_id || '-'}</span>
+                        {combinedJob.task_id && combinedJob.task_id !== 'Not Applicable' && (
+                          <button
+                            onClick={handleCopyTaskId}
+                            className="inline-flex items-center p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-all duration-200"
+                            title="Copy Task ID"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
                     <div className="flex items-center gap-2">
                       <span className="form-label text-body-large font-semibold min-w-[80px]">Status:</span>
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-body font-semibold shadow-sm status-chip-${combinedJob.status}`}>
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-body font-semibold shadow-sm ${
+                        combinedJob.status === 'PENDING_AGENT_SYNC' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' : 
+                        `status-chip-${combinedJob.status}`
+                      }`}>
                         {combinedJob.status === 'SUCCEEDED' && (
                           <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -225,6 +284,9 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
                           </svg>
                         )}
                         {combinedJob.status === 'RUNNING' && (
+                          <div className="w-2 h-2 mr-1.5 rounded-full bg-current animate-pulse"></div>
+                        )}
+                        {combinedJob.status === 'PENDING_AGENT_SYNC' && (
                           <div className="w-2 h-2 mr-1.5 rounded-full bg-current animate-pulse"></div>
                         )}
                         {combinedJob.status === 'QUEUED' && (
