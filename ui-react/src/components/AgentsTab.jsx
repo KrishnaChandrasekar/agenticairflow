@@ -56,6 +56,18 @@ const AgentsTab = ({
   const [capabilityDropdownOpen, setCapabilityDropdownOpen] = useState(false);
   const [banner, setBanner] = useState({ show: false, message: '', type: 'info' });
   const [jobCounts, setJobCounts] = useState({});
+
+  // Calculate job counts for each agent based on jobs and timeRange
+  useEffect(() => {
+    if (!agents || !jobs) return;
+    // Filter jobs by time range if filterJobsByTime is provided
+    const filteredJobs = typeof filterJobsByTime === 'function' ? filterJobsByTime(jobs) : jobs;
+    const counts = {};
+    agents.forEach(agent => {
+      counts[agent.agent_id] = filteredJobs.filter(job => job.agent_id === agent.agent_id).length;
+    });
+    setJobCounts(counts);
+  }, [agents, jobs, timeRange, filterJobsByTime]);
   const pageSizeDropdownRef = useRef(null);
   const stateDropdownRef = useRef(null);
   const heartbeatDropdownRef = useRef(null);
