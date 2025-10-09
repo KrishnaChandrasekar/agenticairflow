@@ -523,7 +523,7 @@ const JobsTab = ({ jobs, timezone, timeRange, filterJobsByTime, onJobClick, onTi
                     </svg>
                   </div>
                   {statusDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-gradient-to-r from-blue-25 to-indigo-25 border border-blue-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto backdrop-blur-sm">
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-gradient-to-r from-blue-25 to-indigo-25 border border-blue-200 rounded-lg shadow-lg z-50 overflow-y-auto backdrop-blur-sm">
                       {statusOptions.map((option) => (
                         <button key={option.value} onClick={() => handleStatusSelect(option.value)} className={`w-full text-left px-4 py-2.5 text-sm transition-all duration-150 hover:bg-blue-100/60 hover:text-blue-900 ${filters.status === option.value ? 'bg-blue-200/70 text-blue-900 font-medium' : 'text-gray-800'}`}>{option.label}</button>
                       ))}
