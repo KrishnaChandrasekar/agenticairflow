@@ -8,7 +8,7 @@ import base64
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session
 from flask_restx import Api, Resource, fields
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -27,6 +27,7 @@ except ImportError:
 # -----------------------------
 # Config
 # -----------------------------
+# Database configuration - container path by default, can be overridden via env var
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:////data/db.sqlite")
 ROUTER_TOKEN = os.environ.get("ROUTER_TOKEN", "router-secret")
 AGENT_TOKEN  = os.environ.get("AGENT_TOKEN",  "agent-secret")
@@ -35,7 +36,7 @@ OTP_EXPIRY_MINUTES = int(os.environ.get("OTP_EXPIRY_MINUTES", "60"))  # OTP expi
 # -----------------------------
 # DB setup
 # -----------------------------
-# Ensure /data directory exists for SQLite DB
+# Ensure database directory exists for SQLite DB
 _db_path = DATABASE_URL.replace("sqlite://", "")
 db_dir = os.path.dirname(_db_path)
 if db_dir and not os.path.exists(db_dir):
@@ -97,6 +98,13 @@ def format_execution_time(started_at, finished_at, job_status=None):
 # App & Swagger Setup
 # -----------------------------
 app = Flask(__name__)
+
+# Set secret key for sessions
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+
+# Initialize authentication
+from auth import init_auth
+init_auth(app)
 
 # Initialize Flask-RESTX for Swagger (avoid root route conflicts)
 api = Api(
@@ -215,10 +223,16 @@ except Exception:
 # Helpers
 # -----------------------------
 def auth_ok(req) -> bool:
+    # Check for Bearer token authentication (for API clients)
     auth = req.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return False
-    return auth.split(" ", 1)[1] == ROUTER_TOKEN
+    if auth.startswith("Bearer "):
+        return auth.split(" ", 1)[1] == ROUTER_TOKEN
+    
+    # Check for session authentication (for web UI)
+    if 'user_id' in session:
+        return True
+    
+    return False
 
 def labels_match(agent_labels: Dict[str, Any], job_labels: Dict[str, Any]) -> bool:
     if not job_labels:
