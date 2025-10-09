@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import SpikeGraphLogo from './SpikeGraphLogo';
 import { getSupportedTimezones, formatTzLabel } from '../utils/api';
 
 const Header = ({ timezone, onTimezoneChange, onResetToLocal, onClearCache, onSubmitJobClick }) => {
@@ -63,10 +64,12 @@ const Header = ({ timezone, onTimezoneChange, onResetToLocal, onClearCache, onSu
 
   return (
     <header className="flex items-center justify-between">
-      <h1 className="text-display text-primary ml-4 cursor-pointer transition-colors duration-200 hover:text-accent" style={{ color: '#143d6b' }}>
-        Agent Router Monitoring Console
-      </h1>
-      
+      <div className="flex items-center gap-4 ml-4">
+        <SpikeGraphLogo size={56} />
+        <h1 className="text-display text-primary cursor-pointer transition-colors duration-200 hover:text-accent" style={{ color: '#143d6b' }}>
+          Agent Router Monitoring Console
+        </h1>
+      </div>
       <div className="flex items-center gap-3">
         {/* Timezone selector */}
         <div className="relative">

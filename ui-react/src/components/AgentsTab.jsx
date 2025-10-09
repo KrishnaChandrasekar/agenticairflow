@@ -251,11 +251,11 @@ const AgentsTab = ({
 
   // Status dropdown options
     const stateOptions = [
-      { value: '', label: 'All States' },
-      { value: 'NEW', label: 'New' },
-      { value: 'PENDING_APPROVAL', label: 'Pending Approval' },
-      { value: 'ENROLLING', label: 'Enrolling' },
-      { value: 'REGISTERED', label: 'Registered' }
+  { value: '', label: 'ALL STATES' },
+  { value: 'NEW', label: 'NEW' },
+  { value: 'PENDING_APPROVAL', label: 'PENDING APPROVAL' },
+  { value: 'ENROLLING', label: 'ENROLLING' },
+  { value: 'REGISTERED', label: 'REGISTERED' }
     ];
 
     const heartbeatOptions = [
@@ -265,7 +265,7 @@ const AgentsTab = ({
     ];
 
     const capabilityOptions = [
-      { value: '', label: 'All Capability' },
+      { value: '', label: 'All' },
       { value: 'Available', label: 'Available' },
       { value: 'Busy', label: 'Busy' }
     ];
@@ -581,7 +581,7 @@ const AgentsTab = ({
                   <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  <span className="font-semibold text-white">Capability</span>
+                  <span className="font-semibold text-white">Availability</span>
                 </div>
               </th>
               <th 
@@ -677,7 +677,7 @@ const AgentsTab = ({
                     </svg>
                   </div>
                   {stateDropdownOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-blue-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
                       {stateOptions.map((option) => (
                         <button
                           key={option.value}
@@ -743,7 +743,7 @@ const AgentsTab = ({
                     onClick={() => setCapabilityDropdownOpen(!capabilityDropdownOpen)}
                     className="border border-blue-200 rounded-lg pl-10 pr-10 py-2.5 w-full text-sm text-gray-900 bg-white/80 backdrop-blur-sm hover:bg-white focus:bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md text-left"
                   >
-                    {capabilityOptions.find(o => o.value === filters.capability)?.label || 'All Capability'}
+                    {capabilityOptions.find(o => o.value === filters.capability)?.label || 'All'}
                   </button>
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none z-10">
                     <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${capabilityDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
