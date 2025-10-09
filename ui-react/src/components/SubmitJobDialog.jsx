@@ -9,6 +9,8 @@ const SubmitJobDialog = ({
   onJobSubmitted 
 }) => {
   const [selectedAgent, setSelectedAgent] = useState(preselectedAgent || '');
+  const selectedAgentRef = useRef(selectedAgent);
+  useEffect(() => { selectedAgentRef.current = selectedAgent; }, [selectedAgent]);
   const [command, setCommand] = useState('echo HELLO && sleep 2 && echo DONE');
   const [labels, setLabels] = useState('{}');
   const [output, setOutput] = useState('');
@@ -313,9 +315,10 @@ const SubmitJobDialog = ({
         }
       }, 100);
 
-      // Try to extract job ID for persistence
+      // Try to extract job ID and agent for persistence
       let jobId = '';
       let submitSuccess = false;
+      let pickedAgent = '';
       try {
         const jobObj = JSON.parse(text);
         if (jobObj && jobObj.job_id) {
@@ -325,6 +328,10 @@ const SubmitJobDialog = ({
           jobId = jobObj.id;
           submitSuccess = true;
         }
+        // If agent_id is present in response, auto-select it
+        if (jobObj && jobObj.agent_id) {
+          pickedAgent = jobObj.agent_id;
+        }
       } catch {
         // Fallback to regex
         const jobMatch = text.match(/job_id\s*[:=]\s*['\"]?(\w+)["']?/i);
@@ -332,9 +339,17 @@ const SubmitJobDialog = ({
           jobId = jobMatch[1];
           submitSuccess = true;
         }
+        const agentMatch = text.match(/agent_id\s*[:=]\s*['\"]?(\w+)["']?/i);
+        if (agentMatch) {
+          pickedAgent = agentMatch[1];
+        }
       }
 
       if (submitSuccess) {
+        // If agent was picked automatically, select it in dropdown (use ref to avoid closure issues)
+        if (!selectedAgentRef.current && pickedAgent) {
+          setSelectedAgent(pickedAgent);
+        }
         // Store test job ID
         let testJobIds = [];
         try {
