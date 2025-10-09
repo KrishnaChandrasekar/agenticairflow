@@ -103,7 +103,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Initialize authentication
-from auth import init_auth
+from auth import init_auth, require_permission, login_required, user_has_permission, log_audit_event
 init_auth(app)
 
 # Initialize Flask-RESTX for Swagger (avoid root route conflicts)
@@ -231,6 +231,21 @@ def auth_ok(req) -> bool:
     # Check for session authentication (for web UI)
     if 'user_id' in session:
         return True
+    
+    return False
+
+def auth_ok_with_permission(req, resource: str, action: str = 'read') -> bool:
+    """Check authentication and permission for a specific resource/action"""
+    # Check for Bearer token authentication (for API clients) - full access
+    auth = req.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        if auth.split(" ", 1)[1] == ROUTER_TOKEN:
+            return True
+    
+    # Check for session authentication with permissions (for web UI)
+    if 'user_id' in session:
+        user_id = session['user_id']
+        return user_has_permission(user_id, resource, action)
     
     return False
 
@@ -581,8 +596,11 @@ class AgentList(Resource):
     }))
     def get(self):
         """List all agents with optional filtering"""
-        if not auth_ok(request):
-            api.abort(401, "Unauthorized")
+        if not auth_ok_with_permission(request, 'agents', 'read'):
+            log_audit_event('unauthorized_access', resource='agents', details={'action': 'read', 'endpoint': '/agents'}, success=False)
+            api.abort(401, "Unauthorized - requires agents:read permission")
+        
+        log_audit_event('list_agents', resource='agents')
         
         # Filters: /agents?state=registered|discovered or /agents?active=true|false
         state = (request.args.get("state") or "").lower().strip()
@@ -678,9 +696,10 @@ def agents_register():
 def submit():
     """Submit a new job for execution"""
     
-    # Check authorization
-    if not auth_ok(request):
-        return {"error":"unauthorized"}, 401
+    # Check authorization with permission
+    if not auth_ok_with_permission(request, 'jobs', 'write'):
+        log_audit_event('unauthorized_access', resource='jobs', details={'action': 'write', 'endpoint': '/submit'}, success=False)
+        return {"error":"unauthorized - requires jobs:write permission"}, 401
 
     data = request.get_json(force=True) or {}
     # Debug: Log the received payload structure
@@ -733,6 +752,10 @@ def submit():
         )
         s.add(j); s.commit()
         print(f"[ROUTER DEBUG] Job {jid} created with labels: {labels}", file=sys.stderr)
+        
+        # Log job creation
+        log_audit_event('create_job', resource='job', resource_id=jid, 
+                       details={'dag_id': dag_id, 'task_id': task_id, 'labels': labels, 'priority': job_spec.get("priority", 5)})
 
         # dag_id and task_id are already correctly set from job_spec above
         # No need for additional payload parsing since the values are directly available
@@ -836,8 +859,9 @@ def submit():
 def status(job_id: str):
     """Get job status and details"""
     import sys
-    if not auth_ok(request):
-        return {"error":"unauthorized"}, 401
+    if not auth_ok_with_permission(request, 'jobs', 'read'):
+        log_audit_event('unauthorized_access', resource='jobs', details={'action': 'read', 'job_id': job_id}, success=False)
+        return {"error":"unauthorized - requires jobs:read permission"}, 401
 
     with Session() as s:
         j = s.get(Job, job_id)
@@ -1056,8 +1080,11 @@ def logs(job_id: str):
 }))
 def list_jobs():
     """List jobs with optional filtering"""
-    if not auth_ok(request):
-        return {"error":"unauthorized"}, 401
+    if not auth_ok_with_permission(request, 'jobs', 'read'):
+        log_audit_event('unauthorized_access', resource='jobs', details={'action': 'read', 'endpoint': '/jobs'}, success=False)
+        return {"error":"unauthorized - requires jobs:read permission"}, 401
+    
+    log_audit_event('list_jobs', resource='jobs')
     # filters
     try:
         limit = int(request.args.get("limit", 200))

@@ -4,6 +4,7 @@ import TabNavigation from './components/TabNavigation';
 import JobsTab from './components/JobsTab';
 import AgentsTab from './components/AgentsTab';
 import AnalyticsTab from './components/AnalyticsTab';
+import SecurityTab from './components/SecurityTab';
 import JobDrawer from './components/JobDrawer';
 import SubmitJobDialog from './components/SubmitJobDialog';
 import ErrorBanner from './components/ErrorBanner';
@@ -31,7 +32,7 @@ function App() {
 
   const checkAuthStatus = async () => {
     try {
-      const response = await fetch(`${API_BASE}/auth/me`, {
+      const response = await fetch(`${API_BASE}/api/auth/me`, {
         credentials: 'include'
       });
       
@@ -181,6 +182,12 @@ function App() {
                 filterJobsByTime={filterJobsByTime}
                 autoRefresh={autoRefresh}
                 timezone={timezone}
+              />
+            )}
+
+            {activeTab === 'security' && (
+              <SecurityTab
+                user={user}
               />
             )}
           </div>
