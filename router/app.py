@@ -212,9 +212,10 @@ def _json_errors(e):
 try:
     from flask_cors import CORS
     CORS(app, resources={r"/*": {
-        "origins": "*",
+        "origins": ["http://localhost:8090", "http://127.0.0.1:8090"],
         "allow_headers": ["Content-Type", "Authorization"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "supports_credentials": True
     }})
 except Exception:
     pass

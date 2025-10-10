@@ -30,9 +30,9 @@ const SecurityTab = ({ user }) => {
 
   const sections = [
     { id: 'dashboard', name: 'Security Overview', icon: '🛡️', permission: 'dashboard' },
-    { id: 'users', name: 'User Management', icon: '👥', permission: 'users' },
+    { id: 'users', name: 'User Management', icon: '�', permission: 'users' },
     { id: 'groups', name: 'Group Management', icon: '🏢', permission: 'groups' },
-    { id: 'roles', name: 'Role Management', icon: '🎭', permission: 'roles' },
+    { id: 'roles', name: 'Role Management', icon: '👥', permission: 'roles' },
     { id: 'permissions', name: 'Permissions', icon: '🔐', permission: 'permissions' },
     { id: 'audit', name: 'Audit Logs', icon: '📋', permission: 'audit' }
   ];

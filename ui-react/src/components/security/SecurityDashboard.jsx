@@ -211,7 +211,7 @@ const SecurityDashboard = ({ user }) => {
           title="Roles"
           value={stats.roles.total}
           subtitle="Permission sets"
-          icon="🎭"
+          icon="👥"
           color="purple"
         />
         <StatCard
