@@ -869,6 +869,172 @@ def delete_group(group_id):
             'message': 'Group deleted successfully'
         })
 
+# Group Member Management Endpoints
+@auth_bp.route('/groups/<int:group_id>/members', methods=['GET'])
+@require_permission('groups', 'read')
+def get_group_members(group_id):
+    """Get all members of a group"""
+    from app import Session
+    
+    with Session() as s:
+        group = s.query(Group).filter(Group.id == group_id).first()
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        members = [{
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'is_active': user.is_active
+        } for user in group.group_users]
+        
+        return jsonify({
+            'members': members,
+            'group_id': group_id,
+            'group_name': group.name
+        })
+
+@auth_bp.route('/groups/<int:group_id>/members', methods=['POST'])
+@require_permission('groups', 'write')
+def add_group_member(group_id):
+    """Add a member to a group"""
+    from app import Session
+    
+    data = request.get_json() or {}
+    user_id = data.get('user_id')
+    
+    if not user_id:
+        return jsonify({'error': 'user_id is required'}), 400
+    
+    with Session() as s:
+        group = s.query(Group).filter(Group.id == group_id).first()
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        user = s.query(User).filter(User.id == user_id).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Check if user is already a member
+        if user in group.group_users:
+            return jsonify({'error': 'User is already a member of this group'}), 409
+        
+        # Add user to group
+        group.group_users.append(user)
+        group.updated_at = now_utc()
+        s.commit()
+        
+        log_audit_event('add_group_member', resource='group', resource_id=group_id,
+                       details={'user_id': user_id, 'username': user.username})
+        
+        return jsonify({
+            'ok': True,
+            'message': f'User {user.username} added to group {group.name}',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email
+            }
+        })
+
+@auth_bp.route('/groups/<int:group_id>/members/<int:user_id>', methods=['DELETE'])
+@require_permission('groups', 'write')
+def remove_group_member(group_id, user_id):
+    """Remove a member from a group"""
+    from app import Session
+    
+    with Session() as s:
+        group = s.query(Group).filter(Group.id == group_id).first()
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        user = s.query(User).filter(User.id == user_id).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Check if user is a member
+        if user not in group.group_users:
+            return jsonify({'error': 'User is not a member of this group'}), 404
+        
+        # Remove user from group
+        group.group_users.remove(user)
+        group.updated_at = now_utc()
+        s.commit()
+        
+        log_audit_event('remove_group_member', resource='group', resource_id=group_id,
+                       details={'user_id': user_id, 'username': user.username})
+        
+        return jsonify({
+            'ok': True,
+            'message': f'User {user.username} removed from group {group.name}'
+        })
+
+@auth_bp.route('/groups/<int:group_id>/members', methods=['PUT'])
+@require_permission('groups', 'write')
+def update_group_members(group_id):
+    """Update group membership (bulk add/remove members)"""
+    from app import Session
+    
+    data = request.get_json() or {}
+    member_ids = data.get('member_ids', [])
+    
+    if not isinstance(member_ids, list):
+        return jsonify({'error': 'member_ids must be an array'}), 400
+    
+    with Session() as s:
+        group = s.query(Group).filter(Group.id == group_id).first()
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        # Get valid users
+        users = s.query(User).filter(User.id.in_(member_ids)).all() if member_ids else []
+        user_dict = {user.id: user for user in users}
+        
+        # Validate all user IDs exist
+        invalid_ids = [uid for uid in member_ids if uid not in user_dict]
+        if invalid_ids:
+            return jsonify({'error': f'Users not found: {invalid_ids}'}), 404
+        
+        # Get current members
+        current_members = set(user.id for user in group.group_users)
+        new_members = set(member_ids)
+        
+        # Calculate changes
+        to_add = new_members - current_members
+        to_remove = current_members - new_members
+        
+        # Apply changes
+        if to_remove:
+            users_to_remove = [user for user in group.group_users if user.id in to_remove]
+            for user in users_to_remove:
+                group.group_users.remove(user)
+        
+        if to_add:
+            users_to_add = [user_dict[uid] for uid in to_add]
+            group.group_users.extend(users_to_add)
+        
+        group.updated_at = now_utc()
+        s.commit()
+        
+        log_audit_event('update_group_members', resource='group', resource_id=group_id,
+                       details={
+                           'added_users': list(to_add),
+                           'removed_users': list(to_remove),
+                           'total_members': len(member_ids)
+                       })
+        
+        return jsonify({
+            'ok': True,
+            'message': f'Group membership updated: {len(to_add)} added, {len(to_remove)} removed',
+            'changes': {
+                'added': len(to_add),
+                'removed': len(to_remove),
+                'total_members': len(member_ids)
+            }
+        })
+
 # Role Management Endpoints
 @auth_bp.route('/roles', methods=['GET'])
 @require_permission('roles', 'read')
@@ -1093,6 +1259,146 @@ def create_permission():
                 'action': permission.action
             }
         }), 201
+
+# Group Permissions Management Endpoints
+@auth_bp.route('/groups/<int:group_id>/permissions', methods=['GET'])
+@require_permission('groups', 'read')
+def get_group_permissions(group_id):
+    """Get all permissions assigned to a group"""
+    from app import Session
+    
+    with Session() as s:
+        group = s.query(Group).filter(Group.id == group_id).first()
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        permissions = []
+        for role in group.group_roles:
+            for permission in role.role_permissions:
+                if permission.is_active:
+                    permissions.append({
+                        'id': permission.id,
+                        'name': permission.name,
+                        'display_name': permission.display_name,
+                        'description': permission.description,
+                        'resource': permission.resource,
+                        'action': permission.action,
+                        'is_system': permission.is_system
+                    })
+        
+        # Remove duplicates (in case multiple roles have same permission)
+        unique_permissions = []
+        seen_ids = set()
+        for perm in permissions:
+            if perm['id'] not in seen_ids:
+                unique_permissions.append(perm)
+                seen_ids.add(perm['id'])
+        
+        return jsonify({
+            'permissions': unique_permissions,
+            'group_id': group_id,
+            'group_name': group.name
+        })
+
+@auth_bp.route('/groups/<int:group_id>/permissions', methods=['POST'])
+@require_permission('groups', 'write')
+def add_group_permission(group_id):
+    """Add a permission to a group (via role assignment)"""
+    from app import Session
+    
+    data = request.get_json() or {}
+    permission_name = data.get('permission_name')
+    
+    if not permission_name:
+        return jsonify({'error': 'permission_name is required'}), 400
+    
+    with Session() as s:
+        group = s.query(Group).filter(Group.id == group_id).first()
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        permission = s.query(Permission).filter(Permission.name == permission_name).first()
+        if not permission:
+            return jsonify({'error': 'Permission not found'}), 404
+        
+        # Find or create a role for this specific permission
+        role_name = f"auto_{permission.resource}_{permission.action}"
+        role = s.query(Role).filter(Role.name == role_name).first()
+        
+        if not role:
+            role = Role(
+                name=role_name,
+                display_name=f"Auto: {permission.display_name}",
+                description=f"Auto-created role for {permission.name}",
+                is_system=False,
+                created_by=session.get('user_id')
+            )
+            s.add(role)
+            s.flush()
+            role.role_permissions.append(permission)
+        
+        # Add role to group if not already assigned
+        if role not in group.group_roles:
+            group.group_roles.append(role)
+            group.updated_at = now_utc()
+            s.commit()
+            
+            log_audit_event('add_group_permission', resource='group', resource_id=group_id,
+                           details={'permission_name': permission_name, 'role_created': role.name})
+            
+            return jsonify({
+                'ok': True,
+                'message': f'Permission {permission.display_name} added to group {group.name}',
+                'permission': {
+                    'id': permission.id,
+                    'name': permission.name,
+                    'display_name': permission.display_name
+                }
+            })
+        else:
+            return jsonify({'error': 'Permission already assigned to group'}), 409
+
+@auth_bp.route('/groups/<int:group_id>/permissions/<int:permission_id>', methods=['DELETE'])
+@require_permission('groups', 'write')
+def remove_group_permission(group_id, permission_id):
+    """Remove a permission from a group"""
+    from app import Session
+    
+    with Session() as s:
+        group = s.query(Group).filter(Group.id == group_id).first()
+        if not group:
+            return jsonify({'error': 'Group not found'}), 404
+        
+        permission = s.query(Permission).filter(Permission.id == permission_id).first()
+        if not permission:
+            return jsonify({'error': 'Permission not found'}), 404
+        
+        # Find roles in the group that have this permission
+        roles_to_remove = []
+        for role in group.group_roles:
+            if permission in role.role_permissions:
+                # If it's an auto-created role with only this permission, remove the role
+                if role.name.startswith('auto_') and len(role.role_permissions) == 1:
+                    roles_to_remove.append(role)
+                # Otherwise, just remove the permission from the role
+                else:
+                    role.role_permissions.remove(permission)
+        
+        # Remove auto-created roles
+        for role in roles_to_remove:
+            group.group_roles.remove(role)
+            s.delete(role)  # Delete the auto-created role entirely
+        
+        group.updated_at = now_utc()
+        s.commit()
+        
+        log_audit_event('remove_group_permission', resource='group', resource_id=group_id,
+                       details={'permission_id': permission_id, 'permission_name': permission.name})
+        
+        return jsonify({
+            'ok': True,
+            'message': f'Permission {permission.display_name} removed from group {group.name}'
+        })
 
 # Audit Log Endpoints
 @auth_bp.route('/audit-logs', methods=['GET'])

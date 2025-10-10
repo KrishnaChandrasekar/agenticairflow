@@ -54,9 +54,12 @@ function App() {
     setUser(userData);
   };
 
-  // Data hooks - only initialize if user is authenticated
-  const { jobs, loading: jobsLoading, error: jobsError, refreshJobs } = useJobs(autoRefresh && user);
-  const { agents, loading: agentsLoading, error: agentsError, refreshAgents } = useAgents(autoRefresh && user);
+  // Data hooks - only fetch data for active tabs when user is authenticated
+  const shouldFetchJobs = autoRefresh && user && (activeTab === 'jobs' || activeTab === 'analytics');
+  const shouldFetchAgents = autoRefresh && user && (activeTab === 'agents' || activeTab === 'analytics');
+  
+  const { jobs, loading: jobsLoading, error: jobsError, refreshJobs } = useJobs(shouldFetchJobs);
+  const { agents, loading: agentsLoading, error: agentsError, refreshAgents } = useAgents(shouldFetchAgents);
   const { timezone, updateTimezone, resetToLocal, clearTimezoneCache } = useTimezone();
   const { timeRange, updateTimeRange, filterJobsByTime } = useTimeRange();
 
@@ -69,11 +72,15 @@ function App() {
     if (activeTab === 'analytics') {
       // For analytics, we want to animate the charts
       await refreshJobs();
+      await refreshAgents();
       // Trigger analytics refresh with animation
       window.dispatchEvent(new CustomEvent('analyticsRefresh', { detail: { animate: true } }));
-    } else {
-      await Promise.all([refreshJobs(), refreshAgents()]);
+    } else if (activeTab === 'jobs') {
+      await refreshJobs();
+    } else if (activeTab === 'agents') {
+      await refreshAgents();
     }
+    // Security tab doesn't need jobs/agents data refresh
   }, [activeTab, refreshJobs, refreshAgents]);
 
   const openJobDrawer = useCallback((jobId) => {

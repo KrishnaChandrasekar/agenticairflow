@@ -330,7 +330,7 @@ const UserManagement = ({ user, canWrite }) => {
                       {userItem.id !== user.id && (
                         <button
                           onClick={() => handleDeleteUser(userItem.id)}
-                          className="bg-red-100 text-red-800 hover:bg-red-200 px-3 py-1 rounded text-xs font-medium"
+                          className="bg-red-100 text-red-800 hover:bg-red-200 px-3 py-1 rounded text-sm font-medium"
                         >
                           Delete
                         </button>
