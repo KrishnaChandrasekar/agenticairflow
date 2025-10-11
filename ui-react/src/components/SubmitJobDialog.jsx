@@ -485,28 +485,35 @@ const SubmitJobDialog = ({
             <div className="space-y-1">
               <label className="form-label text-body-large font-semibold">Target Agent</label>
               <div className="relative" ref={agentDropdownRef}>
-                <button
+                <button 
                   onClick={() => setAgentDropdownOpen(!agentDropdownOpen)}
-                  className="border border-gray-300 rounded-lg px-3 py-2.5 w-full text-body-large text-gray-900 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 cursor-pointer hover:border-gray-400 text-left flex items-center justify-between"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 pr-10 bg-white border border-blue-200 rounded-lg text-lg font-semibold text-gray-900 hover:bg-blue-50 hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer w-full text-left"
                 >
                   <span>{getAgentLabel()}</span>
-                  <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${agentDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
                 </button>
+                <svg className={`absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none transition-transform duration-200 ${agentDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
                 {agentDropdownOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                  <div className="absolute top-full left-0 mt-2 w-full bg-white border border-blue-200 rounded-lg shadow-lg z-50 overflow-hidden">
                     {agentOptions.map((option) => (
                       <button
                         key={option.value}
                         onClick={() => handleAgentSelect(option.value)}
-                        className={`w-full text-left px-3 py-2.5 text-body-large transition-all duration-150 hover:bg-blue-50 hover:text-blue-900 ${
+                        className={`w-full text-left px-4 py-4 text-lg font-semibold transition-all duration-150 ${
                           selectedAgent === option.value 
-                            ? 'bg-blue-100 text-blue-900 font-medium' 
-                            : 'text-gray-700'
+                            ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600' 
+                            : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
                         }`}
                       >
                         {option.label}
+                        {selectedAgent === option.value && (
+                          <span className="ml-auto flex items-center">
+                            <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
