@@ -11,6 +11,8 @@ def now_utc() -> datetime:
 class Job(Base):
     __tablename__ = "jobs"
     job_id     = Column(String, primary_key=True)
+    job_key_b64 = Column(String, nullable=True)  # base64 of composite key (dag_id, task_id, run_id)
+    run_id     = Column(String, nullable=True)    # Airflow run_id for traceability
     status     = Column(String, default="QUEUED")  # QUEUED | RUNNING | SUCCEEDED | FAILED
     agent_id   = Column(String, nullable=True)
     labels     = Column(Text, nullable=True)       # JSON string

@@ -1,13 +1,16 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Header from './components/Header';
 import TabNavigation from './components/TabNavigation';
 import JobsTab from './components/JobsTab';
 import AgentsTab from './components/AgentsTab';
 import AnalyticsTab from './components/AnalyticsTab';
+import SecurityTab from './components/SecurityTab';
 import JobDrawer from './components/JobDrawer';
 import SubmitJobDialog from './components/SubmitJobDialog';
 import ErrorBanner from './components/ErrorBanner';
+import LoginPage from './components/LoginPage';
 import { useJobs, useAgents, useTimezone, useTimeRange } from './hooks/useData';
+import { API_BASE } from './utils/api';
 
 function App() {
   const [activeTab, setActiveTab] = useState('jobs');
@@ -17,10 +20,46 @@ function App() {
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [preselectedAgent, setPreselectedAgent] = useState('');
+  
+  // Authentication state
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  // Data hooks
-  const { jobs, loading: jobsLoading, error: jobsError, refreshJobs } = useJobs(autoRefresh);
-  const { agents, loading: agentsLoading, error: agentsError, refreshAgents } = useAgents(autoRefresh);
+  // Check authentication status on mount
+  useEffect(() => {
+    checkAuthStatus();
+  }, []);
+
+  const checkAuthStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/me`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUser(data.user);
+      } else {
+        setUser(null);
+      }
+    } catch (error) {
+      console.error('Auth check failed:', error);
+      setUser(null);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLoginSuccess = (userData) => {
+    setUser(userData);
+  };
+
+  // Data hooks - only fetch data for active tabs when user is authenticated
+  const shouldFetchJobs = autoRefresh && user && (activeTab === 'jobs' || activeTab === 'analytics');
+  const shouldFetchAgents = autoRefresh && user && (activeTab === 'agents' || activeTab === 'analytics');
+  
+  const { jobs, loading: jobsLoading, error: jobsError, refreshJobs } = useJobs(shouldFetchJobs);
+  const { agents, loading: agentsLoading, error: agentsError, refreshAgents } = useAgents(shouldFetchAgents);
   const { timezone, updateTimezone, resetToLocal, clearTimezoneCache } = useTimezone();
   const { timeRange, updateTimeRange, filterJobsByTime } = useTimeRange();
 
@@ -33,11 +72,15 @@ function App() {
     if (activeTab === 'analytics') {
       // For analytics, we want to animate the charts
       await refreshJobs();
+      await refreshAgents();
       // Trigger analytics refresh with animation
       window.dispatchEvent(new CustomEvent('analyticsRefresh', { detail: { animate: true } }));
-    } else {
-      await Promise.all([refreshJobs(), refreshAgents()]);
+    } else if (activeTab === 'jobs') {
+      await refreshJobs();
+    } else if (activeTab === 'agents') {
+      await refreshAgents();
     }
+    // Security tab doesn't need jobs/agents data refresh
   }, [activeTab, refreshJobs, refreshAgents]);
 
   const openJobDrawer = useCallback((jobId) => {
@@ -65,6 +108,23 @@ function App() {
     closeSubmitDialog();
   }, [closeSubmitDialog]);
 
+  // Show loading spinner while checking authentication
+  if (authLoading) {
+    return (
+      <div className="bg-slate-50 text-slate-800 min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-secondary">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!user) {
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div className="bg-slate-50 text-slate-800 min-h-screen">
       <div className="max-w-screen-2xl mx-auto p-4 space-y-4">
@@ -74,6 +134,8 @@ function App() {
           onResetToLocal={resetToLocal}
           onClearCache={clearTimezoneCache}
           onSubmitJobClick={() => openSubmitDialog()}
+          user={user}
+          onLogout={() => setUser(null)}
         />
 
         {currentError && (
@@ -127,6 +189,12 @@ function App() {
                 filterJobsByTime={filterJobsByTime}
                 autoRefresh={autoRefresh}
                 timezone={timezone}
+              />
+            )}
+
+            {activeTab === 'security' && (
+              <SecurityTab
+                user={user}
               />
             )}
           </div>

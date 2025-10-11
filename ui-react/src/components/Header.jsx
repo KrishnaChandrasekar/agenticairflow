@@ -1,11 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import SpikeGraphLogo from './SpikeGraphLogo';
-import { getSupportedTimezones, formatTzLabel } from '../utils/api';
+import { getSupportedTimezones, formatTzLabel, API_BASE } from '../utils/api';
 
-const Header = ({ timezone, onTimezoneChange, onResetToLocal, onClearCache, onSubmitJobClick }) => {
+const Header = ({ timezone, onTimezoneChange, onResetToLocal, onClearCache, onSubmitJobClick, user, onLogout }) => {
   const [showTzMenu, setShowTzMenu] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef(null);
   const buttonRef = useRef(null);
+  const userMenuRef = useRef(null);
+  const userButtonRef = useRef(null);
 
   const timezones = getSupportedTimezones();
 
@@ -14,21 +17,40 @@ const Header = ({ timezone, onTimezoneChange, onResetToLocal, onClearCache, onSu
     console.log(`🎛️ HEADER: Received timezone prop: ${timezone}`);
   }, [timezone]);
 
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+    } catch (error) {
+      console.error('Logout failed:', error);
+    } finally {
+      onLogout();
+      setShowUserMenu(false);
+    }
+  };
+
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target) && 
           buttonRef.current && !buttonRef.current.contains(e.target)) {
         setShowTzMenu(false);
       }
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target) && 
+          userButtonRef.current && !userButtonRef.current.contains(e.target)) {
+        setShowUserMenu(false);
+      }
     };
 
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         setShowTzMenu(false);
+        setShowUserMenu(false);
       }
     };
 
-    if (showTzMenu) {
+    if (showTzMenu || showUserMenu) {
       document.addEventListener('click', handleClickOutside);
       document.addEventListener('keydown', handleKeyDown);
       
@@ -37,7 +59,7 @@ const Header = ({ timezone, onTimezoneChange, onResetToLocal, onClearCache, onSu
         document.removeEventListener('keydown', handleKeyDown);
       };
     }
-  }, [showTzMenu]);
+  }, [showTzMenu, showUserMenu]);
 
   const handleTimezoneClick = (tz) => {
     console.log(`🖱️ HEADER: User clicked timezone: ${tz}`);
@@ -173,6 +195,50 @@ const Header = ({ timezone, onTimezoneChange, onResetToLocal, onClearCache, onSu
           </svg>
           Test A Job
         </button>
+
+        {/* User Authentication Section */}
+        <div className="relative">
+          <button
+            ref={userButtonRef}
+            onClick={() => setShowUserMenu(prev => !prev)}
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+          >
+            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+              <span className="text-white text-sm font-medium">
+                {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
+              </span>
+            </div>
+            <span className="text-sm font-medium text-gray-700">{user.username}</span>
+            <svg className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {showUserMenu && (
+            <div
+              ref={userMenuRef}
+              className="absolute top-full right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50"
+            >
+              <div className="px-4 py-3 border-b border-gray-100">
+                <p className="text-sm font-medium text-gray-900">{user.username}</p>
+                {user.groups && (
+                  <p className="text-xs text-gray-500">
+                    Groups: {Array.isArray(user.groups) ? user.groups.join(', ') : user.groups}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Sign Out
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

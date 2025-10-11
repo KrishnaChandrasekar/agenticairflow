@@ -8,7 +8,7 @@ import base64
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session
 from flask_restx import Api, Resource, fields
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -27,6 +27,7 @@ except ImportError:
 # -----------------------------
 # Config
 # -----------------------------
+# Database configuration - container path by default, can be overridden via env var
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:////data/db.sqlite")
 ROUTER_TOKEN = os.environ.get("ROUTER_TOKEN", "router-secret")
 AGENT_TOKEN  = os.environ.get("AGENT_TOKEN",  "agent-secret")
@@ -35,7 +36,7 @@ OTP_EXPIRY_MINUTES = int(os.environ.get("OTP_EXPIRY_MINUTES", "60"))  # OTP expi
 # -----------------------------
 # DB setup
 # -----------------------------
-# Ensure /data directory exists for SQLite DB
+# Ensure database directory exists for SQLite DB
 _db_path = DATABASE_URL.replace("sqlite://", "")
 db_dir = os.path.dirname(_db_path)
 if db_dir and not os.path.exists(db_dir):
@@ -97,6 +98,13 @@ def format_execution_time(started_at, finished_at, job_status=None):
 # App & Swagger Setup
 # -----------------------------
 app = Flask(__name__)
+
+# Set secret key for sessions
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+
+# Initialize authentication
+from auth import init_auth, require_permission, login_required, user_has_permission, log_audit_event
+init_auth(app)
 
 # Initialize Flask-RESTX for Swagger (avoid root route conflicts)
 api = Api(
@@ -171,6 +179,7 @@ job_model = api.model('Job', {
     'log_path': fields.String(description='Path to job logs on the agent'),
     'dag_id': fields.String(description='DAG identifier (from Airflow) or "Not Applicable"'),
     'task_id': fields.String(description='Task identifier (from Airflow) or "Not Applicable"'),
+    'run_id': fields.String(description='Run identifier (from Airflow) for traceability'),
     'created_at': fields.DateTime(description='Job creation timestamp'),
     'updated_at': fields.DateTime(description='Last job update timestamp'),
     'started_at': fields.DateTime(description='Job execution start timestamp'),
@@ -204,9 +213,10 @@ def _json_errors(e):
 try:
     from flask_cors import CORS
     CORS(app, resources={r"/*": {
-        "origins": "*",
+        "origins": ["http://localhost:8090", "http://127.0.0.1:8090"],
         "allow_headers": ["Content-Type", "Authorization"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "supports_credentials": True
     }})
 except Exception:
     pass
@@ -215,10 +225,31 @@ except Exception:
 # Helpers
 # -----------------------------
 def auth_ok(req) -> bool:
+    # Check for Bearer token authentication (for API clients)
     auth = req.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return False
-    return auth.split(" ", 1)[1] == ROUTER_TOKEN
+    if auth.startswith("Bearer "):
+        return auth.split(" ", 1)[1] == ROUTER_TOKEN
+    
+    # Check for session authentication (for web UI)
+    if 'user_id' in session:
+        return True
+    
+    return False
+
+def auth_ok_with_permission(req, resource: str, action: str = 'read') -> bool:
+    """Check authentication and permission for a specific resource/action"""
+    # Check for Bearer token authentication (for API clients) - full access
+    auth = req.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        if auth.split(" ", 1)[1] == ROUTER_TOKEN:
+            return True
+    
+    # Check for session authentication with permissions (for web UI)
+    if 'user_id' in session:
+        user_id = session['user_id']
+        return user_has_permission(user_id, resource, action)
+    
+    return False
 
 def labels_match(agent_labels: Dict[str, Any], job_labels: Dict[str, Any]) -> bool:
     if not job_labels:
@@ -567,8 +598,11 @@ class AgentList(Resource):
     }))
     def get(self):
         """List all agents with optional filtering"""
-        if not auth_ok(request):
-            api.abort(401, "Unauthorized")
+        if not auth_ok_with_permission(request, 'agents', 'read'):
+            log_audit_event('unauthorized_access', resource='agents', details={'action': 'read', 'endpoint': '/agents'}, success=False)
+            api.abort(401, "Unauthorized - requires agents:read permission")
+        
+        log_audit_event('list_agents', resource='agents')
         
         # Filters: /agents?state=registered|discovered or /agents?active=true|false
         state = (request.args.get("state") or "").lower().strip()
@@ -664,9 +698,10 @@ def agents_register():
 def submit():
     """Submit a new job for execution"""
     
-    # Check authorization
-    if not auth_ok(request):
-        return {"error":"unauthorized"}, 401
+    # Check authorization with permission
+    if not auth_ok_with_permission(request, 'jobs', 'write'):
+        log_audit_event('unauthorized_access', resource='jobs', details={'action': 'write', 'endpoint': '/submit'}, success=False)
+        return {"error":"unauthorized - requires jobs:write permission"}, 401
 
     data = request.get_json(force=True) or {}
     # Debug: Log the received payload structure
@@ -679,6 +714,7 @@ def submit():
     # Determine job source and set appropriate job-type label
     dag_id = job_spec.get("dag_id")
     task_id = job_spec.get("task_id")
+    run_id = job_spec.get("run_id")
     
     # If dag_id and task_id are present, it's from Airflow
     if dag_id and task_id:
@@ -698,13 +734,15 @@ def submit():
     dag_id = job_spec.get("dag_id")
     task_id = job_spec.get("task_id")
     # Debug: Log what we extracted
-    print(f"[ROUTER DEBUG] Extracted from job_spec: dag_id='{dag_id}', task_id='{task_id}'", file=sys.stderr)
+    print(f"[ROUTER DEBUG] Extracted from job_spec: dag_id='{dag_id}', task_id='{task_id}', run_id='{run_id}'", file=sys.stderr)
     # For jobs from Router UI "Test A Job", set to "Not Applicable" instead of "-"
     if not dag_id or dag_id == "":
         dag_id = "Not Applicable"
     if not task_id or task_id == "":
         task_id = "Not Applicable"
-    print(f"[ROUTER DEBUG] Final values: dag_id='{dag_id}', task_id='{task_id}'", file=sys.stderr)
+    if not run_id or run_id == "":
+        run_id = None
+    print(f"[ROUTER DEBUG] Final values: dag_id='{dag_id}', task_id='{task_id}', run_id='{run_id}'", file=sys.stderr)
     with Session() as s:
         j = Job(
             job_id=jid,
@@ -714,13 +752,18 @@ def submit():
             priority=int(job_spec.get("priority", 5)),
             dag_id=dag_id,
             task_id=task_id,
+            run_id=run_id,
             created_at=now_utc(),
             updated_at=now_utc(),
         )
         s.add(j); s.commit()
         print(f"[ROUTER DEBUG] Job {jid} created with labels: {labels}", file=sys.stderr)
+        
+        # Log job creation
+        log_audit_event('create_job', resource='job', resource_id=jid, 
+                       details={'dag_id': dag_id, 'task_id': task_id, 'run_id': run_id, 'labels': labels, 'priority': job_spec.get("priority", 5)})
 
-        # dag_id and task_id are already correctly set from job_spec above
+        # dag_id, task_id, run_id are already correctly set from job_spec above
         # No need for additional payload parsing since the values are directly available
     
     # Choose agent
@@ -815,6 +858,7 @@ def submit():
     'note': fields.String(description='Additional information'),
     'dag_id': fields.String(description='DAG identifier (from Airflow) or "Not Applicable"'),
     'task_id': fields.String(description='Task identifier (from Airflow) or "Not Applicable"'),
+    'run_id': fields.String(description='Run identifier (from Airflow) for traceability'),
     'started_at': fields.DateTime(description='Job execution start timestamp'),
     'finished_at': fields.DateTime(description='Job execution completion timestamp'),
     'execution_time': fields.String(description='Human-readable execution duration')
@@ -822,8 +866,9 @@ def submit():
 def status(job_id: str):
     """Get job status and details"""
     import sys
-    if not auth_ok(request):
-        return {"error":"unauthorized"}, 401
+    if not auth_ok_with_permission(request, 'jobs', 'read'):
+        log_audit_event('unauthorized_access', resource='jobs', details={'action': 'read', 'job_id': job_id}, success=False)
+        return {"error":"unauthorized - requires jobs:read permission"}, 401
 
     with Session() as s:
         j = s.get(Job, job_id)
@@ -860,6 +905,7 @@ def status(job_id: str):
                 "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
                 "dag_id": j.dag_id,
                 "task_id": j.task_id,
+                "run_id": j.run_id if j.run_id else '-',
                 "started_at": j.started_at.isoformat() if j.started_at else None,
                 "finished_at": j.finished_at.isoformat() if j.finished_at else None,
                 "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
@@ -904,6 +950,7 @@ def status(job_id: str):
                 "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
                 "dag_id": j.dag_id,
                 "task_id": j.task_id,
+                "run_id": j.run_id if j.run_id else '-',
                 "started_at": j.started_at.isoformat() if j.started_at else None,
                 "finished_at": j.finished_at.isoformat() if j.finished_at else None,
                 "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
@@ -999,6 +1046,9 @@ def status(job_id: str):
     with Session() as s:
         j = s.get(Job, job_id)
         print(f"[ROUTER DEBUG] Returning status for job {job_id}: status={j.status} rc={j.rc} dag_id={j.dag_id} task_id={j.task_id}", file=sys.stderr)
+        print(f"[ROUTER DEBUG] Raw run_id value: {repr(j.run_id)} (type: {type(j.run_id)})", file=sys.stderr)
+        processed_run_id = j.run_id if j.run_id else '-'
+        print(f"[ROUTER DEBUG] Processed run_id: {repr(processed_run_id)}", file=sys.stderr)
         return {
             "job_id": j.job_id,
             "status": j.status,
@@ -1008,6 +1058,7 @@ def status(job_id: str):
             "note": j.note,
             "dag_id": j.dag_id,
             "task_id": j.task_id,
+            "run_id": processed_run_id,
             "started_at": j.started_at.isoformat() if j.started_at else None,
             "finished_at": j.finished_at.isoformat() if j.finished_at else None,
             "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
@@ -1042,8 +1093,11 @@ def logs(job_id: str):
 }))
 def list_jobs():
     """List jobs with optional filtering"""
-    if not auth_ok(request):
-        return {"error":"unauthorized"}, 401
+    if not auth_ok_with_permission(request, 'jobs', 'read'):
+        log_audit_event('unauthorized_access', resource='jobs', details={'action': 'read', 'endpoint': '/jobs'}, success=False)
+        return {"error":"unauthorized - requires jobs:read permission"}, 401
+    
+    log_audit_event('list_jobs', resource='jobs')
     # filters
     try:
         limit = int(request.args.get("limit", 200))
@@ -1080,6 +1134,7 @@ def list_jobs():
                 "log_path": j.log_path,
                 "dag_id": j.dag_id,
                 "task_id": j.task_id,
+                "run_id": j.run_id if j.run_id else '-',
                 "created_at": j.created_at.isoformat() if j.created_at else None,
                 "updated_at": j.updated_at.isoformat() if j.updated_at else None,
                 "started_at": j.started_at.isoformat() if j.started_at else None,

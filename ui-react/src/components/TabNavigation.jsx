@@ -149,11 +149,27 @@ const TabNavigation = ({
           </svg>
           Analytics
         </button>
+        <button 
+          onClick={() => onTabChange('security')}
+          className={`inline-flex items-center gap-2 px-4 py-3 font-medium text-base rounded-t-lg border-b-2 transition-all duration-200 ${
+            activeTab === 'security' 
+              ? 'text-blue-700 border-blue-600 bg-gradient-to-t from-white to-blue-50 shadow-sm' 
+              : 'text-gray-600 border-transparent hover:text-gray-800 hover:border-gray-300 hover:bg-gradient-to-t hover:from-gray-50 hover:to-gray-100'
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          Security
+        </button>
       </div>
 
+      {/* DEBUG: Show active tab */}
+      {activeTab !== 'security' ? (
       <div className="flex items-center gap-3">
-        {/* Auto Refresh Toggle */}
-        <div className="flex items-center gap-3 bg-white/70 backdrop-blur-sm border border-slate-200 rounded-lg px-3 py-2 shadow-sm hover:shadow-md transition-all duration-200">
+        {/* Auto Refresh and Time Filter controls */}
+            {/* Auto Refresh Toggle */}
+            <div className="flex items-center gap-3 bg-white/70 backdrop-blur-sm border border-slate-200 rounded-lg px-3 py-2 shadow-sm hover:shadow-md transition-all duration-200">
           <label className="form-label flex items-center gap-2 cursor-pointer">
             <div className="relative">
               <input 
@@ -191,16 +207,17 @@ const TabNavigation = ({
           </div>
         </div>
 
+        {/* Time Filter */}
         <div className="relative">
-          <button 
-            ref={buttonRef}
-            onClick={() => setShowTimeRangeMenu(!showTimeRangeMenu)}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 ${
-              timeRange.enabled 
-                ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-blue-800 shadow-sm hover:shadow-md hover:from-blue-100 hover:to-indigo-100 hover:border-blue-300' 
-                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 shadow-sm'
-            }`}
-          >
+            <button 
+              ref={buttonRef}
+              onClick={() => setShowTimeRangeMenu(!showTimeRangeMenu)}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 ${
+                timeRange.enabled 
+                  ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-blue-800 shadow-sm hover:shadow-md hover:from-blue-100 hover:to-indigo-100 hover:border-blue-300' 
+                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 shadow-sm'
+              }`}
+            >
             {timeRange.enabled && (
               <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
@@ -349,8 +366,9 @@ const TabNavigation = ({
               </div>
             </div>
           )}
-        </div>
+          </div>
       </div>
+      ) : null}
     </div>
   );
 };

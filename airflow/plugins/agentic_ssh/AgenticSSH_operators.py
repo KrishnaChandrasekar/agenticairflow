@@ -72,6 +72,7 @@ class AgenticRunOperator(BaseOperator):
                 "detached": True,
                 "dag_id": context["dag"].dag_id,
                 "task_id": context["task"].task_id,
+                "run_id": context["run_id"], 
             },
             "route": ({"agent_id": self.agent_id} if self.agent_id else {"labels": labels}),
             "priority": self.priority,

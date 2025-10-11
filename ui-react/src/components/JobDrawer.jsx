@@ -172,7 +172,7 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl max-h-[75vh] overflow-hidden border border-gray-100">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] overflow-hidden border border-gray-100">
         <div className="p-6">
           {/* Header */}
           <div className="flex justify-between items-center pb-4 border-b border-gray-100 mb-4">
@@ -198,9 +198,9 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
           </div>
 
           {/* Two-column layout */}
-          <div className="flex gap-6 h-[calc(75vh-140px)]">
+          <div className="flex gap-6 h-[calc(90vh-140px)]">
             {/* Left Column - Job Details */}
-            <div className="flex-1 space-y-4 overflow-y-auto">
+            <div className="flex-1 space-y-4">
               {loading ? (
                 <div className="text-body-large text-gray-500 p-4 bg-gray-50 rounded-lg border border-gray-200">Loading job details...</div>
               ) : (
@@ -259,6 +259,31 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
                             onClick={handleCopyTaskId}
                             className="inline-flex items-center p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-all duration-200"
                             title="Copy Task ID"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Run ID */}
+                    <div className="flex items-center gap-2">
+                      <span className="form-label text-body-large font-semibold min-w-[80px]">Run ID:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-mono-large bg-blue-50 px-2 py-1 rounded border font-mono">{combinedJob.run_id || '-'}</span>
+                        {combinedJob.run_id && combinedJob.run_id !== 'Not Applicable' && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(combinedJob.run_id);
+                              } catch (err) {
+                                console.error('Failed to copy Run ID:', err);
+                              }
+                            }}
+                            className="inline-flex items-center p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-all duration-200"
+                            title="Copy Run ID"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />

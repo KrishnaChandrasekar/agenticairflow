@@ -355,6 +355,7 @@ config.local.*
 *.crt
 *.csr
 .secrets/
+cookies.txt
 
 # ===============================
 # PROJECT SPECIFIC
