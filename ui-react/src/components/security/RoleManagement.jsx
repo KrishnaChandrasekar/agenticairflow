@@ -1,5 +1,17 @@
+        <button
+          type="button"
+          className="ml-2 px-4 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-200 transition"
+          onClick={() => {
+            setFilterType('all');
+            setFilterPermissionCount('all');
+            setFilterUserCount('all');
+          }}
+        >
+          Reset
+        </button>
 import { API_BASE } from '../../utils/api';
 import React, { useState, useEffect } from 'react';
+import Dropdown from '../Dropdown';
 import RoleModal from './RoleModal';
 import RolePermissionsModal from './RolePermissionsModal';
 
@@ -216,37 +228,54 @@ const RoleManagement = ({ user, canWrite }) => {
           onChange={(e) => setSearchTerm(e.target.value)}
           className="block w-full max-w-md px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
         />
-        <select
-          value={filterType}
-          onChange={e => setFilterType(e.target.value)}
-          className="min-w-[140px] px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white text-sm font-medium text-gray-700"
-        >
-          <option value="all">All Types</option>
-          <option value="system">System Roles</option>
-          <option value="custom">Custom Roles</option>
-        </select>
-        <select
-          value={filterPermissionCount}
-          onChange={e => setFilterPermissionCount(e.target.value)}
-          className="min-w-[160px] px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white text-sm font-medium text-gray-700"
-        >
-          <option value="all">All Permissions</option>
-          <option value="0">No Permissions</option>
-          <option value="1-5">1-5 Permissions</option>
-          <option value="6-15">6-15 Permissions</option>
-          <option value=">15">More than 15</option>
-        </select>
-        <select
-          value={filterUserCount}
-          onChange={e => setFilterUserCount(e.target.value)}
-          className="min-w-[150px] px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white text-sm font-medium text-gray-700"
-        >
-          <option value="all">All User Counts</option>
-          <option value="0">No Users</option>
-          <option value="1-10">1-10 Users</option>
-          <option value="11-50">11-50 Users</option>
-          <option value=">50">More than 50</option>
-        </select>
+          <Dropdown
+            options={[
+              { value: 'all', label: 'All Types' },
+              { value: 'system', label: 'System Roles' },
+              { value: 'custom', label: 'Custom Roles' },
+            ]}
+            value={filterType}
+            onChange={setFilterType}
+            placeholder="Select Type"
+            width="140px"
+          />
+          <Dropdown
+            options={[
+              { value: 'all', label: 'All Permissions' },
+              { value: '0', label: 'No Permissions' },
+              { value: '1-5', label: '1-5 Permissions' },
+              { value: '6-15', label: '6-15 Permissions' },
+              { value: '>15', label: 'More than 15' },
+            ]}
+            value={filterPermissionCount}
+            onChange={setFilterPermissionCount}
+            placeholder="Select Permission Count"
+            width="160px"
+          />
+          <Dropdown
+            options={[
+              { value: 'all', label: 'All User Counts' },
+              { value: '0', label: 'No Users' },
+              { value: '1-10', label: '1-10 Users' },
+              { value: '11-50', label: '11-50 Users' },
+              { value: '>50', label: 'More than 50' },
+            ]}
+            value={filterUserCount}
+            onChange={setFilterUserCount}
+            placeholder="Select User Count"
+            width="150px"
+          />
+          <button
+            type="button"
+            className="ml-2 px-4 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-200 transition"
+            onClick={() => {
+              setFilterType('all');
+              setFilterPermissionCount('all');
+              setFilterUserCount('all');
+            }}
+          >
+            Reset
+          </button>
       </div>
 
       {/* Roles Grid */}

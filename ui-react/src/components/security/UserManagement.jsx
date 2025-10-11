@@ -12,6 +12,7 @@ const UserManagement = ({ user, canWrite }) => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterActive, setFilterActive] = useState('all');
+  const [showUserFilterDropdown, setShowUserFilterDropdown] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -223,16 +224,54 @@ const UserManagement = ({ user, canWrite }) => {
             className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
           />
         </div>
-        <select
-          value={filterActive}
-          onChange={(e) => setFilterActive(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-        >
-          <option value="all">All Users</option>
-          <option value="active">Active Only</option>
-          <option value="inactive">Inactive Only</option>
-          <option value="locked">Locked Only</option>
-        </select>
+        {/* Custom dropdown for user filter, styled like JobsTab Rows Per Page */}
+        <div className="relative min-w-[180px]" style={{width:'180px'}}>
+          <button
+            type="button"
+            onClick={() => setShowUserFilterDropdown((v) => !v)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 pr-10 bg-white border border-blue-200 rounded-lg text-sm font-medium text-gray-900 hover:bg-blue-50 hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer w-full text-left"
+          >
+            <span>{
+              filterActive === 'all' ? 'All Users' :
+              filterActive === 'active' ? 'Active Only' :
+              filterActive === 'inactive' ? 'Inactive Only' :
+              filterActive === 'locked' ? 'Locked Only' : 'All Users'
+            }</span>
+          </button>
+          <svg className={`absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none transition-transform duration-200 ${showUserFilterDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+          {showUserFilterDropdown && (
+            <div className="absolute top-full left-0 mt-2 w-full bg-white border border-blue-200 rounded-lg shadow-lg z-50 overflow-hidden">
+              {[
+                { value: 'all', label: 'All Users' },
+                { value: 'active', label: 'Active Only' },
+                { value: 'inactive', label: 'Inactive Only' },
+                { value: 'locked', label: 'Locked Only' }
+              ].map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => { setFilterActive(option.value); setShowUserFilterDropdown(false); }}
+                  className={`w-full text-left px-4 py-3 text-sm font-medium transition-all duration-150 ${
+                    filterActive === option.value 
+                      ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600' 
+                      : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
+                  }`}
+                >
+                  {option.label}
+                  {filterActive === option.value && (
+                    <span className="ml-auto flex items-center">
+                      <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Users Table */}
