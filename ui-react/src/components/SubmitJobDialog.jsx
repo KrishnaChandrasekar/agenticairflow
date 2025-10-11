@@ -487,7 +487,7 @@ const SubmitJobDialog = ({
               <div className="relative" ref={agentDropdownRef}>
                 <button 
                   onClick={() => setAgentDropdownOpen(!agentDropdownOpen)}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 pr-10 bg-white border border-blue-200 rounded-lg text-lg font-semibold text-gray-900 hover:bg-blue-50 hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer w-full text-left"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 pr-10 bg-white border border-blue-200 rounded-lg text-lg font-normal text-gray-900 hover:bg-blue-50 hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer w-full text-left"
                 >
                   <span>{getAgentLabel()}</span>
                 </button>
@@ -500,7 +500,7 @@ const SubmitJobDialog = ({
                       <button
                         key={option.value}
                         onClick={() => handleAgentSelect(option.value)}
-                        className={`w-full text-left px-4 py-4 text-lg font-semibold transition-all duration-150 ${
+                        className={`w-full text-left px-4 py-4 text-lg font-normal transition-all duration-150 ${
                           selectedAgent === option.value 
                             ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600' 
                             : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
