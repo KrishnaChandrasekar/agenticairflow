@@ -1,9 +1,15 @@
-import { API_BASE } from '../../utils/api';
+import { API_BASE, fmtDate } from '../../utils/api';
+import Dropdown from '../Dropdown';
 import React, { useState, useEffect } from 'react';
 
-const AuditLogs = ({ user }) => {
+const AuditLogs = ({ user, timezone }) => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Debug: Log timezone changes
+  useEffect(() => {
+    console.log('🕒 AuditLogs: Timezone changed to:', timezone);
+  }, [timezone]);
   const [filters, setFilters] = useState({
     user_id: '',
     action: '',
@@ -16,6 +22,12 @@ const AuditLogs = ({ user }) => {
   useEffect(() => {
     fetchAuditLogs();
   }, [filters]);
+
+  // Force re-render when timezone changes to update timestamp formatting
+  useEffect(() => {
+    // This effect will trigger a re-render when timezone changes
+    // No need to fetch data again, just re-render with new timezone formatting
+  }, [timezone]);
 
   const fetchAuditLogs = async () => {
     try {
@@ -71,15 +83,17 @@ const AuditLogs = ({ user }) => {
             onChange={(e) => setFilters({ ...filters, resource: e.target.value })}
             className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
           />
-          <select
+          <Dropdown
+            options={[
+              { value: 'all', label: 'All Events' },
+              { value: 'true', label: 'Success Only' },
+              { value: 'false', label: 'Failures Only' },
+            ]}
             value={filters.success}
-            onChange={(e) => setFilters({ ...filters, success: e.target.value })}
-            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-          >
-            <option value="all">All Events</option>
-            <option value="true">Success Only</option>
-            <option value="false">Failures Only</option>
-          </select>
+            onChange={(value) => setFilters({ ...filters, success: value })}
+            placeholder="All Events"
+            width="140px"
+          />
           <input
             type="date"
             value={filters.start_date}
@@ -122,7 +136,7 @@ const AuditLogs = ({ user }) => {
                       )}
                     </div>
                     <div className="mt-1 flex items-center text-sm text-gray-500">
-                      <span>{new Date(log.timestamp).toLocaleString()}</span>
+                      <span>{log.timestamp ? fmtDate(log.timestamp, timezone) : ''}</span>
                       {log.ip_address && (
                         <>
                           <span className="mx-2">•</span>

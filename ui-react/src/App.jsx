@@ -195,6 +195,7 @@ function App() {
             {activeTab === 'security' && (
               <SecurityTab
                 user={user}
+                timezone={timezone}
               />
             )}
           </div>

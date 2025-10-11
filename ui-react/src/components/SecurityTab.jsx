@@ -6,7 +6,7 @@ import PermissionManagement from './security/PermissionManagement';
 import AuditLogs from './security/AuditLogs';
 import SecurityDashboard from './security/SecurityDashboard';
 
-const SecurityTab = ({ user }) => {
+const SecurityTab = ({ user, timezone }) => {
   const [activeSection, setActiveSection] = useState('dashboard');
   const [hasPermission, setHasPermission] = useState({});
 
@@ -30,9 +30,9 @@ const SecurityTab = ({ user }) => {
 
   const sections = [
     { id: 'dashboard', name: 'Security Overview', icon: '🛡️', permission: 'dashboard' },
-    { id: 'users', name: 'User Management', icon: '�', permission: 'users' },
+    { id: 'users', name: 'User Management', icon: '👤', permission: 'users' },
     { id: 'groups', name: 'Group Management', icon: '🏢', permission: 'groups' },
-    { id: 'roles', name: 'Role Management', icon: '👥', permission: 'roles' },
+    { id: 'roles', name: 'Role Management', icon: '🎭', permission: 'roles' },
     { id: 'permissions', name: 'Permissions', icon: '🔐', permission: 'permissions' },
     { id: 'audit', name: 'Audit Logs', icon: '📋', permission: 'audit' }
   ];
@@ -72,7 +72,7 @@ const SecurityTab = ({ user }) => {
   const renderActiveSection = () => {
     switch (activeSection) {
       case 'dashboard':
-        return <SecurityDashboard user={user} />;
+        return <SecurityDashboard user={user} timezone={timezone} onSectionChange={setActiveSection} />;
       case 'users':
         return <UserManagement user={user} canWrite={hasPermission.canWrite} />;
       case 'groups':
@@ -82,9 +82,9 @@ const SecurityTab = ({ user }) => {
       case 'permissions':
         return <PermissionManagement user={user} canWrite={hasPermission.canWrite} />;
       case 'audit':
-        return <AuditLogs user={user} />;
+        return <AuditLogs user={user} timezone={timezone} />;
       default:
-        return <SecurityDashboard user={user} />;
+        return <SecurityDashboard user={user} timezone={timezone} onSectionChange={setActiveSection} />;
     }
   };
 

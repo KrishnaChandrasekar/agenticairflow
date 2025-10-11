@@ -291,7 +291,7 @@ const RoleManagement = ({ user, canWrite }) => {
                   <div className="flex-shrink-0">
                     <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center">
                       <span className="text-base font-medium text-purple-600">
-                        👥
+                        🎭
                       </span>
                     </div>
                   </div>

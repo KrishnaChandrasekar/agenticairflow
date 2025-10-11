@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { API_BASE } from '../../utils/api';
+import { API_BASE, fmtDate } from '../../utils/api';
 
-const SecurityDashboard = ({ user }) => {
+const SecurityDashboard = ({ user, timezone, onSectionChange }) => {
   const [stats, setStats] = useState({
     users: { total: 0, active: 0, locked: 0 },
     groups: { total: 0 },
@@ -144,7 +144,7 @@ const SecurityDashboard = ({ user }) => {
           )}
         </p>
         <p className="text-sm text-gray-500">
-          {new Date(activity.timestamp).toLocaleString()}
+          {activity.timestamp ? fmtDate(activity.timestamp, timezone) : ''}
           {activity.ip_address && ` • ${activity.ip_address}`}
         </p>
         {!activity.success && activity.error_message && (
@@ -339,7 +339,10 @@ const SecurityDashboard = ({ user }) => {
               </ul>
             </div>
             <div className="mt-4">
-              <button className="text-base text-indigo-600 hover:text-indigo-500">
+              <button 
+                onClick={() => onSectionChange && onSectionChange('audit')}
+                className="text-base text-indigo-600 hover:text-indigo-500 cursor-pointer"
+              >
                 View all audit logs →
               </button>
             </div>
