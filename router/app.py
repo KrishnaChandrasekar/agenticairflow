@@ -179,6 +179,7 @@ job_model = api.model('Job', {
     'log_path': fields.String(description='Path to job logs on the agent'),
     'dag_id': fields.String(description='DAG identifier (from Airflow) or "Not Applicable"'),
     'task_id': fields.String(description='Task identifier (from Airflow) or "Not Applicable"'),
+    'run_id': fields.String(description='Run identifier (from Airflow) for traceability'),
     'created_at': fields.DateTime(description='Job creation timestamp'),
     'updated_at': fields.DateTime(description='Last job update timestamp'),
     'started_at': fields.DateTime(description='Job execution start timestamp'),
@@ -713,6 +714,7 @@ def submit():
     # Determine job source and set appropriate job-type label
     dag_id = job_spec.get("dag_id")
     task_id = job_spec.get("task_id")
+    run_id = job_spec.get("run_id")
     
     # If dag_id and task_id are present, it's from Airflow
     if dag_id and task_id:
@@ -732,13 +734,15 @@ def submit():
     dag_id = job_spec.get("dag_id")
     task_id = job_spec.get("task_id")
     # Debug: Log what we extracted
-    print(f"[ROUTER DEBUG] Extracted from job_spec: dag_id='{dag_id}', task_id='{task_id}'", file=sys.stderr)
+    print(f"[ROUTER DEBUG] Extracted from job_spec: dag_id='{dag_id}', task_id='{task_id}', run_id='{run_id}'", file=sys.stderr)
     # For jobs from Router UI "Test A Job", set to "Not Applicable" instead of "-"
     if not dag_id or dag_id == "":
         dag_id = "Not Applicable"
     if not task_id or task_id == "":
         task_id = "Not Applicable"
-    print(f"[ROUTER DEBUG] Final values: dag_id='{dag_id}', task_id='{task_id}'", file=sys.stderr)
+    if not run_id or run_id == "":
+        run_id = None
+    print(f"[ROUTER DEBUG] Final values: dag_id='{dag_id}', task_id='{task_id}', run_id='{run_id}'", file=sys.stderr)
     with Session() as s:
         j = Job(
             job_id=jid,
@@ -748,6 +752,7 @@ def submit():
             priority=int(job_spec.get("priority", 5)),
             dag_id=dag_id,
             task_id=task_id,
+            run_id=run_id,
             created_at=now_utc(),
             updated_at=now_utc(),
         )
@@ -756,9 +761,9 @@ def submit():
         
         # Log job creation
         log_audit_event('create_job', resource='job', resource_id=jid, 
-                       details={'dag_id': dag_id, 'task_id': task_id, 'labels': labels, 'priority': job_spec.get("priority", 5)})
+                       details={'dag_id': dag_id, 'task_id': task_id, 'run_id': run_id, 'labels': labels, 'priority': job_spec.get("priority", 5)})
 
-        # dag_id and task_id are already correctly set from job_spec above
+        # dag_id, task_id, run_id are already correctly set from job_spec above
         # No need for additional payload parsing since the values are directly available
     
     # Choose agent
@@ -853,6 +858,7 @@ def submit():
     'note': fields.String(description='Additional information'),
     'dag_id': fields.String(description='DAG identifier (from Airflow) or "Not Applicable"'),
     'task_id': fields.String(description='Task identifier (from Airflow) or "Not Applicable"'),
+    'run_id': fields.String(description='Run identifier (from Airflow) for traceability'),
     'started_at': fields.DateTime(description='Job execution start timestamp'),
     'finished_at': fields.DateTime(description='Job execution completion timestamp'),
     'execution_time': fields.String(description='Human-readable execution duration')
@@ -899,6 +905,7 @@ def status(job_id: str):
                 "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
                 "dag_id": j.dag_id,
                 "task_id": j.task_id,
+                "run_id": j.run_id if j.run_id else '-',
                 "started_at": j.started_at.isoformat() if j.started_at else None,
                 "finished_at": j.finished_at.isoformat() if j.finished_at else None,
                 "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
@@ -943,6 +950,7 @@ def status(job_id: str):
                 "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
                 "dag_id": j.dag_id,
                 "task_id": j.task_id,
+                "run_id": j.run_id if j.run_id else '-',
                 "started_at": j.started_at.isoformat() if j.started_at else None,
                 "finished_at": j.finished_at.isoformat() if j.finished_at else None,
                 "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
@@ -1038,6 +1046,9 @@ def status(job_id: str):
     with Session() as s:
         j = s.get(Job, job_id)
         print(f"[ROUTER DEBUG] Returning status for job {job_id}: status={j.status} rc={j.rc} dag_id={j.dag_id} task_id={j.task_id}", file=sys.stderr)
+        print(f"[ROUTER DEBUG] Raw run_id value: {repr(j.run_id)} (type: {type(j.run_id)})", file=sys.stderr)
+        processed_run_id = j.run_id if j.run_id else '-'
+        print(f"[ROUTER DEBUG] Processed run_id: {repr(processed_run_id)}", file=sys.stderr)
         return {
             "job_id": j.job_id,
             "status": j.status,
@@ -1047,6 +1058,7 @@ def status(job_id: str):
             "note": j.note,
             "dag_id": j.dag_id,
             "task_id": j.task_id,
+            "run_id": processed_run_id,
             "started_at": j.started_at.isoformat() if j.started_at else None,
             "finished_at": j.finished_at.isoformat() if j.finished_at else None,
             "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
@@ -1122,6 +1134,7 @@ def list_jobs():
                 "log_path": j.log_path,
                 "dag_id": j.dag_id,
                 "task_id": j.task_id,
+                "run_id": j.run_id if j.run_id else '-',
                 "created_at": j.created_at.isoformat() if j.created_at else None,
                 "updated_at": j.updated_at.isoformat() if j.updated_at else None,
                 "started_at": j.started_at.isoformat() if j.started_at else None,
