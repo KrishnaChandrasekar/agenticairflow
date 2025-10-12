@@ -41,6 +41,84 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
   const heatmapRef = useRef(null);
   const jobTypeDonutRef = useRef(null);
   const testJobDonutRef = useRef(null);
+  
+  // Enhanced debugging for timezone issues
+  console.log('🎯 AnalyticsTab Props Debug:', {
+    timezone,
+    jobsCount: jobs?.length || 0,
+    autoRefresh,
+    sampleJob: jobs?.[0] ? {
+      id: jobs[0].id,
+      created_at: jobs[0].created_at,
+      updated_at: jobs[0].updated_at,
+      status: jobs[0].status
+    } : null
+  });
+
+  // Helper function to convert UTC date to selected timezone using offset calculation
+  const convertToTimezone = (utcDate, targetTimezone) => {
+    console.log(`🔍 Converting timezone - Input: ${utcDate.toISOString()}, Target: ${targetTimezone}`);
+    
+    if (!targetTimezone || targetTimezone === 'UTC') {
+      console.log(`⏰ No timezone conversion needed, using UTC`);
+      return new Date(utcDate);
+    }
+    
+    try {
+      // For IST specifically, we know it's UTC+5:30
+      let offsetMinutes = 0;
+      
+      if (targetTimezone === 'Asia/Kolkata' || targetTimezone === 'Asia/Calcutta' || targetTimezone.includes('IST')) {
+        offsetMinutes = 5 * 60 + 30; // IST is UTC+5:30
+        console.log(`🇮🇳 Using IST offset: +${offsetMinutes} minutes`);
+      } else {
+        // For other timezones, calculate offset using toLocaleString
+        const utcTime = utcDate.getTime();
+        const utcHour = utcDate.getUTCHours();
+        
+        // Get the hour in target timezone
+        const targetHour = parseInt(utcDate.toLocaleString('en-US', { 
+          timeZone: targetTimezone, 
+          hour: '2-digit', 
+          hour12: false 
+        }));
+        
+        offsetMinutes = (targetHour - utcHour) * 60;
+        if (offsetMinutes > 12 * 60) offsetMinutes -= 24 * 60; // Handle day wraparound
+        if (offsetMinutes < -12 * 60) offsetMinutes += 24 * 60;
+        
+        console.log(`🌐 Calculated offset for ${targetTimezone}: ${offsetMinutes} minutes`);
+      }
+      
+      // Apply the offset to the UTC time
+      const offsetMs = offsetMinutes * 60 * 1000;
+      const adjustedTime = utcDate.getTime() + offsetMs;
+      const result = new Date(adjustedTime);
+      
+      console.log(`🌍 Timezone conversion:`);
+      console.log(`  UTC: ${utcDate.toISOString()} (${utcDate.getUTCHours()}h/${utcDate.getUTCDay()}d)`);
+      console.log(`  Offset: +${offsetMinutes} minutes`);
+      console.log(`  Result: ${result.toISOString()} (${result.getHours()}h/${result.getDay()}d)`);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ Timezone conversion failed:', error);
+      return new Date(utcDate);
+    }
+  };
+
+  // Test timezone conversion with current time
+  if (timezone) {
+    const testDate = new Date();
+    const convertedTest = convertToTimezone(testDate, timezone);
+    console.log('🧪 Timezone conversion test:', {
+      input: testDate.toISOString(),
+      timezone: timezone,
+      output: convertedTest.toString(),
+      hourDiff: convertedTest.getHours() - testDate.getUTCHours()
+    });
+  }
+
   const airflowJobDonutRef = useRef(null);
   const jobTypeLegendRef = useRef(null);
   const testJobLegendRef = useRef(null);
@@ -314,6 +392,112 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
     }
   };
 
+  // Create time-based data with automatic intervals - moved outside to avoid hoisting issues
+  const createTimeSeriesData = (jobs) => {
+    const filteredJobs = jobs;
+    console.log('🔍 Processing', filteredJobs.length, 'jobs for time-based chart data');
+    console.log('🌍 Current timezone for stacked bar chart:', timezone);
+
+    // Convert all timestamps to selected timezone for proper time range calculation - using heatmap approach
+    const timezoneTimestamps = filteredJobs
+      .map(job => {
+        // Use same direct approach as heatmap
+        const originalDate = new Date(job.updated_at || job.created_at);
+        if (!isNaN(originalDate.getTime())) {
+          const timezoneDate = convertToTimezone(originalDate, timezone);
+          return timezoneDate.getTime();
+        }
+        return null;
+      })
+      .filter(t => t !== null);
+      
+    console.log('📅 Valid timezone-adjusted timestamps found:', timezoneTimestamps.length);
+    if (!timezoneTimestamps.length) {
+      console.log('❌ No valid timestamps found in jobs');
+      return [];
+    }
+    
+    const minTime = Math.min(...timezoneTimestamps);
+    const maxTime = Math.max(...timezoneTimestamps);
+    const timeSpan = maxTime - minTime;
+    
+    // Auto-select interval: 15min, 1hr, 6hr, or 1day based on span
+    let intervalMs;
+    if (timeSpan <= 6 * 60 * 60 * 1000) intervalMs = 15 * 60 * 1000; // 15 minutes
+    else if (timeSpan <= 48 * 60 * 60 * 1000) intervalMs = 60 * 60 * 1000; // 1 hour
+    else if (timeSpan <= 7 * 24 * 60 * 60 * 1000) intervalMs = 6 * 60 * 60 * 1000; // 6 hours
+    else intervalMs = 24 * 60 * 60 * 1000; // 1 day
+
+    // Create time buckets - key insight: we need to map timezone buckets to UTC timestamps for D3 axis
+    const bins = {};
+    const bucketToUTCMap = {}; // Map timezone bucket to corresponding UTC time
+    const startTime = Math.floor(minTime / intervalMs) * intervalMs;
+    const endTime = Math.ceil(maxTime / intervalMs) * intervalMs;
+    
+    // Initialize all time buckets
+    for (let time = startTime; time <= endTime; time += intervalMs) {
+      bins[time] = { 
+        testJobs: 0, 
+        airflowJobs: 0, 
+        total: 0 
+      };
+    }
+
+    // Populate buckets with timezone-adjusted job data and track corresponding UTC times
+    filteredJobs.forEach((job, index) => {
+      // Use the same direct approach as the heatmap for consistency
+      const originalDate = new Date(job.updated_at || job.created_at);
+      
+      // Check if the date is valid
+      if (isNaN(originalDate.getTime())) {
+        console.warn(`❌ Invalid timestamp for job ${job.job_id || 'unknown'}:`, job.updated_at, job.created_at);
+        return;
+      }
+      
+      // Convert to timezone - same as heatmap
+      const timezoneDate = convertToTimezone(originalDate, timezone);
+      const adjustedJobTime = timezoneDate.getTime();
+      
+      // Find the appropriate bucket based on timezone-converted time
+      const bucket = Math.floor(adjustedJobTime / intervalMs) * intervalMs;
+      
+      if (bins[bucket]) {
+        // Store the original UTC time that corresponds to this timezone bucket
+        if (!bucketToUTCMap[bucket]) {
+          // Calculate the UTC time that would display as the timezone bucket time
+          // This is the reverse conversion: if timezone bucket shows "13:00 IST", 
+          // we want the UTC time that would be "13:00" when converted to IST
+          const timezoneOffsetMs = convertToTimezone(new Date(0), timezone).getTime() - new Date(0).getTime();
+          bucketToUTCMap[bucket] = new Date(bucket - timezoneOffsetMs);
+        }
+        
+        const jobType = parseJobType(job);
+        if (jobType === "Test Job") {
+          bins[bucket].testJobs += 1;
+        } else {
+          bins[bucket].airflowJobs += 1;
+        }
+        bins[bucket].total += 1;
+        
+        console.log(`📋 Job ${index + 1}: ${job.job_id || 'unknown'} - ${originalDate.toISOString()} → ${timezoneDate.toString()} → bucket ${new Date(bucket).toString()}`);
+      } else {
+        console.warn(`❌ No bucket found for job ${job.job_id || 'unknown'}: bucket=${bucket}, original=${originalDate.toISOString()}, timezone=${timezoneDate.toString()}`);
+      }
+    });
+
+    // Create result with proper UTC timestamps for D3 axis
+    const result = Object.keys(bins)
+      .map(bucket => ({
+        timestamp: bucketToUTCMap[bucket] || new Date(parseInt(bucket)),
+        testJobs: bins[bucket].testJobs,
+        airflowJobs: bins[bucket].airflowJobs,
+        total: bins[bucket].total
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+    console.log('📊 Time-based chart data created:', result.length, 'time bins');
+    return result;
+  };
+
   const renderStackedBarChart = (jobs) => {
     if (!chartRef.current) {
       console.log('❌ Chart container ref not available');
@@ -325,7 +509,9 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       return;
     }
     
-    console.log('📊 Rendering bar chart with', jobs.length, 'jobs');
+    console.log('📊 Rendering stacked bar chart with', jobs.length, 'jobs');
+    console.log('🌍 Stacked bar chart timezone:', timezone);
+    console.log('📅 Chart will use timezone conversion:', timezone !== 'UTC' && timezone);
     
     const container = chartRef.current;
     container.innerHTML = "";
@@ -345,66 +531,15 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       return;
     }
     
-    // Simple time-based grouping with automatic intervals - Changed to group by job type instead of status
-    const createTimeSeriesData = (jobs) => {
-      const filteredJobs = jobs;
-      console.log('🔍 Processing', filteredJobs.length, 'jobs for chart data');
-
-      // Determine optimal time interval based on data span
-      const timestamps = filteredJobs.map(job => toTs(job.updated_at || job.created_at)).filter(t => Number.isFinite(t));
-      console.log('📅 Valid timestamps found:', timestamps.length);
-      if (!timestamps.length) {
-        console.log('❌ No valid timestamps found in jobs');
-        return [];
-      }
-      
-      const minTime = Math.min(...timestamps);
-      const maxTime = Math.max(...timestamps);
-      const timeSpan = maxTime - minTime;
-      
-      // Auto-select interval: 15min, 1hr, 6hr, or 1day based on span
-      let intervalMs;
-      if (timeSpan <= 6 * 60 * 60 * 1000) intervalMs = 15 * 60 * 1000; // 15 minutes
-      else if (timeSpan <= 48 * 60 * 60 * 1000) intervalMs = 60 * 60 * 1000; // 1 hour
-      else if (timeSpan <= 7 * 24 * 60 * 60 * 1000) intervalMs = 6 * 60 * 60 * 1000; // 6 hours
-      else intervalMs = 24 * 60 * 60 * 1000; // 1 day
-
-      // Create time buckets - Changed to track Test Jobs vs Airflow Jobs
-      const bins = {};
-      const startTime = Math.floor(minTime / intervalMs) * intervalMs;
-      const endTime = Math.ceil(maxTime / intervalMs) * intervalMs;
-      
-      // Initialize all time buckets
-      for (let time = startTime; time <= endTime; time += intervalMs) {
-        bins[time] = { timestamp: new Date(time), "Test Jobs": 0, "Airflow Jobs": 0 };
-      }
-
-      // Populate buckets with job data - Group by job type instead of status
-      filteredJobs.forEach(job => {
-        const jobTime = toTs(job.updated_at || job.created_at);
-        if (Number.isFinite(jobTime)) {
-          const bucket = Math.floor(jobTime / intervalMs) * intervalMs;
-          if (bins[bucket]) {
-            const jobType = parseJobType(job);
-            bins[bucket][jobType] = (bins[bucket][jobType] || 0) + 1;
-          }
-        }
-      });
-
-      const result = Object.values(bins).sort((a, b) => a.timestamp - b.timestamp);
-      console.log('📊 Chart data created:', result.length, 'time bins');
-      return result;
-    };
-    
     const data = createTimeSeriesData(jobs);
     
     if (data.length === 0) {
-      console.log('❌ No chart data created - showing empty state');
+      console.log('❌ No time-based chart data created - showing empty state');
       container.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: center; height: 100%; min-height: 200px; color: #9ca3af; font-size: 1.1rem; font-weight: 500;">
+        <div style="display: flex; align-items: center; justify-center; height: 100%; min-height: 200px; color: #9ca3af; font-size: 1.1rem; font-weight: 500;">
           <div style="text-align: center;">
             <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">📊</div>
-            <div>Unable to process job data for chart</div>
+            <div>Unable to process job data for time-based chart</div>
             <div style="font-size: 0.9rem; color: #6b7280; margin-top: 0.5rem;">Check if jobs have valid timestamps</div>
           </div>
         </div>
@@ -412,58 +547,73 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       return;
     }
     
-    // Get container dimensions with padding consideration
+    // Get container dimensions
     const containerRect = container.getBoundingClientRect();
-    const containerWidth = Math.max(500, (containerRect.width || 800) - 20); // Increased minimum width
-    const containerHeight = Math.max(250, (containerRect.height || 300) - 10); // Account for padding
+    const containerWidth = Math.max(500, (containerRect.width || 800) - 40);
+    const containerHeight = Math.max(250, (containerRect.height || 300) - 20);
     
-    console.log('📐 Chart dimensions:', { containerWidth, containerHeight, rectWidth: containerRect.width });
+    console.log('📐 Chart dimensions:', { containerWidth, containerHeight });
     
-    const margin = { top: 20, right: 20, bottom: 70, left: 50 };
+    const margin = { top: 20, right: 160, bottom: 80, left: 60 };
     const width = containerWidth - margin.left - margin.right;
     const height = containerHeight - margin.top - margin.bottom;
     
+    // Create SVG
     const svg = window.d3.select(container)
       .append("svg")
       .attr("width", "100%")
       .attr("height", "100%")
-      .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+      .attr("viewBox", `0 0 ${containerWidth} ${containerHeight}`)
       .attr("preserveAspectRatio", "xMidYMid meet")
       .style("background", "transparent")
-      .style("display", "block")
-      .style("max-width", "100%")
-      .style("height", "100%");
+      .style("display", "block");
       
     const g = svg.append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
     
-    // Time-based scales
-    const xTimeScale = window.d3.scaleTime()
-      .domain(window.d3.extent(data, d => d.timestamp))
-      .range([0, width]);
-      
-    // Fixed bar width calculation - make bars narrower to prevent Y-axis overlap
-    const maxBarWidth = 40; // Maximum bar width
-    const calculatedBarWidth = (width / data.length) * 0.6; // Reduced from 0.8 to 0.6
-    const barWidth = Math.max(8, Math.min(maxBarWidth, calculatedBarWidth)); // Minimum 8px, maximum 40px
-      
-    const y = window.d3.scaleLinear()
-      .domain([0, window.d3.max(data, d => d["Test Jobs"] + d["Airflow Jobs"])])
-      .range([height, 0]);
-    
-    // Stack generator - Changed to use job types
-    const stack = window.d3.stack()
-      .keys(["Test Jobs", "Airflow Jobs"]);
-      
-    const series = stack(data);
-    
-    // Updated color scale for job types (using green theme)
+    // Color scale - green-based theme
     const color = window.d3.scaleOrdinal()
       .domain(["Test Jobs", "Airflow Jobs"])
-      .range(["#3b82f6", "#22c55e"]); // Blue for Test Jobs, Green for Airflow Jobs
+      .range(["#A4DCBC", "#21C55E"]); // Emerald green for Test Jobs, Success green for Airflow Jobs
+
+    // Calculate bar width and gap to prevent overlap
+    const minGap = 12; // Increased minimum gap between bars in px
+    const barSlot = width / data.length;
+    const barWidth = Math.max(8, Math.min(28, barSlot - minGap)); // Reduce max width, enforce larger gap, but keep a minimum width
+
+    // Time-based X scale with padding to prevent overlap with Y-axis
+    const xPadding = Math.max(barWidth / 2, 20); // Ensure at least 20px or half bar width padding
+    const xScale = window.d3.scaleTime()
+      .domain(window.d3.extent(data, d => d.timestamp))
+      .range([xPadding, width - xPadding]);
     
-    // Simple grid lines (like original UI)
-    const yGrid = window.d3.axisLeft(y)
+    const yScale = window.d3.scaleLinear()
+      .domain([0, window.d3.max(data, d => d.total) || 10])
+      .range([height, 0]);
+    
+    // Stack generator
+    const stack = window.d3.stack()
+      .keys(["testJobs", "airflowJobs"]);
+    
+    const stackedData = stack(data);
+    
+    // Create tooltip
+    const tooltip = window.d3.select(container)
+      .append("div")
+      .style("opacity", 0)
+      .style("position", "absolute")
+      .style("background", "#fff")
+      .style("color", "#334155")
+      .style("padding", "12px 16px")
+      .style("border-radius", "8px")
+      .style("font-size", "14px")
+      .style("box-shadow", "0 4px 12px rgba(0,0,0,0.15)")
+      .style("border", "1px solid #e5e7eb")
+      .style("pointer-events", "none")
+      .style("z-index", "1000");
+
+    // Add grid lines
+    const yGrid = window.d3.axisLeft(yScale)
       .tickSize(-width)
       .tickFormat("");
     
@@ -472,76 +622,117 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       .style("opacity", 0.3)
       .style("stroke", "#e5e7eb")
       .call(yGrid);
-
-    // Simple white tooltip (like original UI)
-    const tooltip = window.d3.select(container)
-      .append("div")
-      .style("opacity", 0)
-      .style("position", "absolute")
-      .style("background", "#fff")
-      .style("color", "#334155")
-      .style("padding", "8px 12px")
-      .style("border-radius", "6px")
-      .style("font-size", "14px")
-      .style("box-shadow", "0 2px 8px rgba(0,0,0,0.12)")
-      .style("border", "1px solid #888")
-      .style("pointer-events", "none")
-      .style("z-index", "1000");
-
-    // Draw time-series bars
+    
+    // Draw stacked bars
     g.selectAll(".serie")
-      .data(series)
+      .data(stackedData)
       .enter().append("g")
       .attr("class", "serie")
-      .attr("fill", d => color(d.key))
+      .attr("fill", (d, i) => color(i === 0 ? "Test Jobs" : "Airflow Jobs"))
       .selectAll("rect")
       .data(d => d)
       .enter().append("rect")
-      .attr("x", d => xTimeScale(d.data.timestamp) - barWidth / 2)
-      .attr("y", d => y(d[1]))
-      .attr("height", d => y(d[0]) - y(d[1]))
+      .attr("x", d => xScale(d.data.timestamp) - barWidth / 2)
+      .attr("y", d => yScale(d[1]))
+      .attr("height", d => yScale(d[0]) - yScale(d[1]))
       .attr("width", barWidth)
+      .style("cursor", "pointer")
       .style("opacity", 0.9)
       .on("mouseover", function(event, d) {
-        const jobType = window.d3.select(this.parentNode).datum().key;
-        const count = d[1] - d[0];
+        const serie = window.d3.select(this.parentNode).datum();
         const date = d.data.timestamp;
+        // Format date in the selected timezone for tooltip
+        const timezoneDate = convertToTimezone(date, timezone);
         const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
                            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        const dateStr = `${date.getDate()}-${monthNames[date.getMonth()]}-${date.getFullYear()}`;
-        const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-        const total = d.data["Test Jobs"] + d.data["Airflow Jobs"];
-        
-        tooltip.transition().duration(200).style("opacity", .9);
-        tooltip.html(`<b>${dateStr} ${timeStr}</b><br>${jobType}: <b>${count}</b><br>Total: <b>${total}</b>`)
-          .style("left", (event.pageX + 18) + "px")
-          .style("top", (event.pageY - 10) + "px");
+        const dateStr = `${timezoneDate.getDate()}-${monthNames[timezoneDate.getMonth()]}-${timezoneDate.getFullYear()}`;
+        const timeStr = `${timezoneDate.getHours().toString().padStart(2, '0')}:${timezoneDate.getMinutes().toString().padStart(2, '0')}`;
+        const total = d.data.total;
+        const airflowJobs = d.data.airflowJobs;
+        const testJobs = d.data.testJobs;
+
+        window.d3.select(this).style("opacity", 0.7);
+
+        tooltip.transition().duration(200).style("opacity", 1);
+        tooltip.html(`
+          <div style="font-weight: 600; margin-bottom: 4px;">${dateStr} ${timeStr}</div>
+          <div>Total Jobs: <strong>${total}</strong></div>
+          <div style="margin-top: 8px; margin-bottom: 2px; font-size: 13px; font-weight: 500; color: #64748b;">Job Type Breakdown:</div>
+          <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 4px;">
+            <span style="display: flex; align-items: center; gap: 4px;">
+              <span style="width: 12px; height: 12px; background: #21C55E; border-radius: 2px; display: inline-block;"></span>
+              <span style="color: #334155;">Airflow Jobs:</span>
+              <strong style="margin-left: 2px; color: #21C55E;">${airflowJobs}</strong>
+            </span>
+            <span style="display: flex; align-items: center; gap: 4px;">
+              <span style="width: 12px; height: 12px; background: #A4DCBC; border-radius: 2px; display: inline-block;"></span>
+              <span style="color: #334155;">Test Jobs:</span>
+              <strong style="margin-left: 2px; color: #A4DCBC;">${testJobs}</strong>
+            </span>
+          </div>
+        `)
+          .style("left", (event.pageX + 12) + "px")
+          .style("top", (event.pageY - 8) + "px");
       })
       .on("mouseout", function() {
-        tooltip.transition().duration(500).style("opacity", 0);
+        window.d3.select(this).style("opacity", 0.9);
+        tooltip.transition().duration(300).style("opacity", 0);
       });
     
-    // Time-based X axis with smart formatting
+    // Add value labels on bars (only if bars are tall enough)
+    g.selectAll(".serie")
+      .selectAll(".label")
+      .data(d => d)
+      .enter().append("text")
+      .attr("class", "label")
+      .attr("x", d => xScale(d.data.timestamp))
+      .attr("y", d => {
+        const segmentHeight = yScale(d[0]) - yScale(d[1]);
+        return yScale(d[1]) + segmentHeight / 2;
+      })
+      .attr("dy", "0.35em")
+      .style("text-anchor", "middle")
+      .style("font-size", "12px")
+      .style("font-weight", "600")
+      .style("fill", "white")
+      .style("text-shadow", "0 1px 2px rgba(0,0,0,0.3)")
+      .text(d => {
+        const count = d[1] - d[0];
+        const segmentHeight = yScale(d[0]) - yScale(d[1]);
+        // Only show count if segment is tall enough and count > 0
+        return segmentHeight > 25 && count > 0 ? count : "";
+      });
+    
+    // Time-based X axis with smart formatting (timezone-aware)
     const timeRange = window.d3.extent(data, d => d.timestamp);
     const timeSpan = timeRange[1] - timeRange[0];
+    
+    // Create timezone-aware formatter
+    const createTimezoneFormatter = (formatString) => {
+      return (date) => {
+        // Convert to the selected timezone for display
+        const localDate = convertToTimezone(date, timezone);
+        return window.d3.timeFormat(formatString)(localDate);
+      };
+    };
     
     let timeFormat;
     let tickInterval;
     if (timeSpan <= 6 * 60 * 60 * 1000) { // Less than 6 hours
-      timeFormat = window.d3.timeFormat("%H:%M");
+      timeFormat = createTimezoneFormatter("%H:%M");
       tickInterval = window.d3.timeMinute.every(30);
     } else if (timeSpan <= 2 * 24 * 60 * 60 * 1000) { // Less than 2 days
-      timeFormat = window.d3.timeFormat("%d %b %H:%M");
+      timeFormat = createTimezoneFormatter("%d %b %H:%M");
       tickInterval = window.d3.timeHour.every(4);
     } else if (timeSpan <= 7 * 24 * 60 * 60 * 1000) { // Less than 7 days
-      timeFormat = window.d3.timeFormat("%d-%b");
+      timeFormat = createTimezoneFormatter("%d-%b");
       tickInterval = window.d3.timeDay.every(1);
     } else {
-      timeFormat = window.d3.timeFormat("%d-%b-%Y");
+      timeFormat = createTimezoneFormatter("%d-%b-%Y");
       tickInterval = window.d3.timeDay.every(Math.ceil(timeSpan / (7 * 24 * 60 * 60 * 1000)));
     }
     
-    const xAxis = window.d3.axisBottom(xTimeScale)
+    const xAxis = window.d3.axisBottom(xScale)
       .ticks(tickInterval)
       .tickFormat(timeFormat);
     
@@ -550,38 +741,71 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       .call(xAxis)
       .selectAll("text")
       .style("text-anchor", "end")
+      .style("font-size", "11px")
       .attr("dx", "-.8em")
       .attr("dy", ".15em")
       .attr("transform", "rotate(-45)");
     
-    // Y axis
     g.append("g")
-      .call(window.d3.axisLeft(y));
+      .call(window.d3.axisLeft(yScale)
+        .ticks(Math.min(10, window.d3.max(data, d => d.total) || 10))
+        .tickFormat(window.d3.format("d"))) // Format as integers (no decimals)
+      .selectAll("text")
+      .style("font-size", "12px");
     
-    // Legend - Updated for job types
-    const legend = g.selectAll(".legend")
-      .data(color.domain().slice())
-      .enter().append("g")
+    // Add Y axis label
+    g.append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("y", 0 - margin.left)
+      .attr("x", 0 - (height / 2))
+      .attr("dy", "1em")
+      .style("text-anchor", "middle")
+      .style("font-size", "14px")
+      .style("font-weight", "500")
+      .style("fill", "#374151")
+      .text("Number of Jobs");
+    
+    // Add legend below the chart
+    const legend = g.append("g")
       .attr("class", "legend")
-      .attr("transform", (d, i) => `translate(${width - 120},${i * 20})`);
-      
-    legend.append("rect")
-      .attr("x", 0)
-      .attr("width", 18)
-      .attr("height", 18)
-      .style("fill", color);
-      
-    legend.append("text")
+      .attr("transform", `translate(0, ${height + 50})`);
+    
+    const totalTestJobs = data.reduce((sum, d) => sum + d.testJobs, 0);
+    const totalAirflowJobs = data.reduce((sum, d) => sum + d.airflowJobs, 0);
+    
+    const legendData = [
+      { label: "Test Jobs", color: "#A4DCBC", count: totalTestJobs },
+      { label: "Airflow Jobs", color: "#21C55E", count: totalAirflowJobs }
+    ];
+    
+    const legendItems = legend.selectAll(".legend-item")
+      .data(legendData.filter(d => d.count > 0))
+      .enter().append("g")
+      .attr("class", "legend-item")
+      .attr("transform", (d, i) => `translate(0, ${i * 25})`);
+    
+    legendItems.append("rect")
+      .attr("width", 16)
+      .attr("height", 16)
+      .attr("fill", d => d.color)
+      .attr("rx", 2);
+    
+    legendItems.append("text")
       .attr("x", 24)
-      .attr("y", 9)
+      .attr("y", 8)
       .attr("dy", "0.35em")
-      .style("text-anchor", "start")
-      .style("font-size", "12px")
-      .text(d => d);
-      
+      .style("font-size", "16px")
+      .style("font-weight", "500")
+      .style("fill", "#374151")
+      .text(d => `${d.label}: ${d.count}`);
+    
+    // Position the legend within the right margin area
+    legend.attr("transform", `translate(${width + 20}, 20)`);
   };
 
   const renderHeatmap = (jobs) => {
+    console.log(`🗺️ Rendering heatmap with ${jobs.length} jobs, timezone: ${timezone}`);
+    
     if (!heatmapRef.current || !window.d3) return;
     
     const container = heatmapRef.current;
@@ -609,51 +833,30 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       const counts = {};
       const activeCells = new Set();
       
-      jobs.forEach(job => {
-        const date = new Date(job.created_at || job.updated_at);
-        const day = date.getDay();
-        const hour = date.getHours();
+      jobs.forEach((job, index) => {
+        const originalDate = new Date(job.created_at || job.updated_at);
+        console.log(`🔢 Processing job ${index + 1}/${jobs.length}: ${job.created_at || job.updated_at}`);
+        
+        // Convert to the selected timezone for proper day/hour calculation
+        const timezoneDate = convertToTimezone(originalDate, timezone);
+        const day = timezoneDate.getDay();
+        const hour = timezoneDate.getHours();
         const key = `${day}-${hour}`;
+        
+        console.log(`📊 Job mapped to: Day ${day} (${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][day]}), Hour ${hour}`);
+        
         counts[key] = (counts[key] || 0) + 1;
         activeCells.add(key);
       });
       
-      // If very few jobs (< 10), only show a focused view around active cells
-      if (jobs.length < 10 && activeCells.size > 0) {
-        const activeHours = new Set();
-        const activeDays = new Set();
-        
-        for (const key of activeCells) {
-          const [day, hour] = key.split('-').map(Number);
-          activeDays.add(day);
-          activeHours.add(hour);
-        }
-        
-        // Create a focused grid around active areas
-        const minHour = Math.max(0, Math.min(...activeHours) - 2);
-        const maxHour = Math.min(23, Math.max(...activeHours) + 2);
-        const minDay = Math.max(0, Math.min(...activeDays) - 1);
-        const maxDay = Math.min(6, Math.max(...activeDays) + 1);
-        
-        for (let day = minDay; day <= maxDay; day++) {
-          for (let hour = minHour; hour <= maxHour; hour++) {
-            data.push({
-              day: day,
-              hour: hour,
-              value: counts[`${day}-${hour}`] || 0
-            });
-          }
-        }
-      } else {
-        // For more jobs, show full grid
-        for (let day = 0; day < 7; day++) {
-          for (let hour = 0; hour < 24; hour++) {
-            data.push({
-              day: day,
-              hour: hour,
-              value: counts[`${day}-${hour}`] || 0
-            });
-          }
+      // Always show full 24-hour, 7-day grid for consistent view
+      for (let day = 0; day < 7; day++) {
+        for (let hour = 0; hour < 24; hour++) {
+          data.push({
+            day: day,
+            hour: hour,
+            value: counts[`${day}-${hour}`] || 0
+          });
         }
       }
       
@@ -669,22 +872,20 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
     const availableWidth = Math.max(containerRect.width - margin.left - margin.right, 600);
     const availableHeight = Math.max(containerRect.height - margin.top - margin.bottom, 150);
     
-    // Calculate dimensions based on actual data range
-    const uniqueHours = [...new Set(data.map(d => d.hour))];
-    const uniqueDays = [...new Set(data.map(d => d.day))];
-    const hoursRange = uniqueHours.length;
-    const daysRange = uniqueDays.length;
+    // Always use full 24-hour, 7-day dimensions
+    const hoursRange = 24;
+    const daysRange = 7;
     
-    // Prioritize horizontal stretching - adjust for actual data range
-    const cellWidth = availableWidth / (hoursRange || 24);
-    const cellHeight = Math.min(availableHeight / (daysRange || 7), cellWidth * 0.6);
+    // Prioritize horizontal stretching for full 24-hour view
+    const cellWidth = availableWidth / 24;
+    const cellHeight = Math.min(availableHeight / 7, cellWidth * 0.6);
     
     const actualCellWidth = cellWidth;
     const actualCellHeight = cellHeight;
     
-    // Actual chart dimensions based on data range
-    const width = actualCellWidth * (hoursRange || 24);
-    const height = actualCellHeight * (daysRange || 7);
+    // Chart dimensions for full 24x7 grid
+    const width = actualCellWidth * 24;
+    const height = actualCellHeight * 7;
     
     // Create responsive SVG that fills the container
     const svg = window.d3.select(container)
@@ -702,9 +903,9 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       .domain([0, maxValue || 10])
       .range(["#e5e7eb", "#22c55e"]);
     
-    // Calculate position mapping for focused grids
-    const minHour = Math.min(...uniqueHours);
-    const minDay = Math.min(...uniqueDays);
+    // Calculate position mapping for full 24x7 grid
+    const minHour = 0; // Always start from hour 0
+    const minDay = 0;  // Always start from Sunday (day 0)
     
     // Draw cells with responsive sizing - stretch horizontally
     g.selectAll(".cell")
@@ -921,6 +1122,12 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
 
       // Create simple render functions inline to avoid hoisting issues
       const renderCharts = () => {
+        // Check all refs are available before rendering
+        if (!gaugeRef.current || !chartRef.current || !heatmapRef.current) {
+          console.warn('📊 Some chart containers not yet available, skipping render');
+          return;
+        }
+        
         renderModernGauge(filteredJobs);
         renderStackedBarChart(filteredJobs);
         renderHeatmap(filteredJobs);
@@ -930,15 +1137,15 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
         const testJobFilter = (job) => parseJobType(job) === "Test Job";
         const airflowJobFilter = (job) => parseJobType(job) === "Airflow Job";
         
-        // Render donut charts
-        renderDonutChart(filteredJobs, jobTypeDonutRef.current, "Job Types", null);
-        renderDonutChart(filteredJobs, testJobDonutRef.current, "Test Jobs", testJobFilter);
-        renderDonutChart(filteredJobs, airflowJobDonutRef.current, "Airflow Jobs", airflowJobFilter);
+        // Render donut charts with null checks
+        if (jobTypeDonutRef.current) renderDonutChart(filteredJobs, jobTypeDonutRef.current, "Job Types", null);
+        if (testJobDonutRef.current) renderDonutChart(filteredJobs, testJobDonutRef.current, "Test Jobs", testJobFilter);
+        if (airflowJobDonutRef.current) renderDonutChart(filteredJobs, airflowJobDonutRef.current, "Airflow Jobs", airflowJobFilter);
         
-        // Render legends
-        renderLegend(filteredJobs, jobTypeLegendRef.current, "All Jobs", null);
-        renderLegend(filteredJobs, testJobLegendRef.current, "Test Jobs", testJobFilter);
-        renderLegend(filteredJobs, airflowJobLegendRef.current, "Airflow Jobs", airflowJobFilter);
+        // Render legends with null checks
+        if (jobTypeLegendRef.current) renderLegend(filteredJobs, jobTypeLegendRef.current, "All Jobs", null);
+        if (testJobLegendRef.current) renderLegend(filteredJobs, testJobLegendRef.current, "Test Jobs", testJobFilter);
+        if (airflowJobLegendRef.current) renderLegend(filteredJobs, airflowJobLegendRef.current, "Airflow Jobs", airflowJobFilter);
       };
       
       renderCharts();
@@ -947,7 +1154,7 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
       setError(`Chart rendering failed: ${error.message}`);
     }
     
-  }, [d3Loaded, jobs, loading, filterJobsByTime]);
+  }, [d3Loaded, jobs, loading, filterJobsByTime, timezone]);
 
   if (loading) {
     return (
@@ -981,7 +1188,7 @@ const AnalyticsTab = ({ jobs, filterJobsByTime, autoRefresh, timezone }) => {
         
         {/* Job Type Breakdown - 80% (increased from 75%) */}
         <div className="w-4/5 bg-white rounded-lg shadow-sm border border-gray-200 p-4 overflow-hidden">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Test Jobs vs Airflow Jobs Over Time</h3>
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Test Jobs vs Airflow Jobs Distribution</h3>
           <div ref={chartRef} className="w-full" style={{height: 'calc(100% - 3rem)'}}></div>
         </div>
       </div>

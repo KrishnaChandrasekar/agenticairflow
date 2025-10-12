@@ -1,19 +1,10 @@
-        <button
-          type="button"
-          className="ml-2 px-4 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-200 transition"
-          onClick={() => {
-            setFilterType('all');
-            setFilterPermissionCount('all');
-            setFilterUserCount('all');
-          }}
-        >
-          Reset
-        </button>
 import { API_BASE } from '../../utils/api';
 import React, { useState, useEffect } from 'react';
 import Dropdown from '../Dropdown';
 import RoleModal from './RoleModal';
 import RolePermissionsModal from './RolePermissionsModal';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faIdBadge } from '@fortawesome/free-solid-svg-icons';
 
 const RoleManagement = ({ user, canWrite }) => {
   // All state declarations at the top
@@ -281,111 +272,100 @@ const RoleManagement = ({ user, canWrite }) => {
       {/* Roles Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredRoles.map((role) => (
-          <div
-            key={role.id}
-            className="bg-white overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow flex flex-col"
-          >
-            <div className="px-4 py-5 sm:p-6 flex-1 flex flex-col">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center">
-                      <span className="text-base font-medium text-purple-600">
-                        🎭
+          <div key={role.id} className="bg-white rounded-lg shadow p-6 flex flex-col">
+            <div className="flex items-center mb-4">
+              <span className="mr-3 text-indigo-500">
+                <FontAwesomeIcon icon={faIdBadge} size="lg" />
+              </span>
+              <div>
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {role.display_name || role.name}
+                </h3>
+                {role.display_name && role.display_name !== role.name && (
+                  <p className="text-base text-gray-500">@{role.name}</p>
+                )}
+              </div>
+              {role.is_system && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-base font-medium bg-blue-100 text-blue-800 ml-3">
+                  System
+                </span>
+              )}
+            </div>
+
+            {role.description && (
+              <p className="text-base text-gray-600 mb-4">{role.description}</p>
+            )}
+
+            <div className="space-y-3 flex-1">
+              <div>
+                <p className="text-base font-medium text-gray-700 mb-1">Permissions</p>
+                {role.permissions && role.permissions.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {role.permissions.slice(0, 3).map((permission, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-2 py-0.5 rounded text-base font-medium bg-green-100 text-green-800"
+                      >
+                        {permission.display_name || permission.name}
                       </span>
-                    </div>
-                  </div>
-                  <div className="ml-3">
-                    <h3 className="text-lg font-medium text-gray-900">
-                      {role.display_name || role.name}
-                    </h3>
-                    {role.display_name && role.display_name !== role.name && (
-                      <p className="text-base text-gray-500">@{role.name}</p>
+                    ))}
+                    {role.permissions.length > 3 && (
+                      <button
+                        onClick={() => {
+                          setSelectedRole(role);
+                          setShowPermissionsModal(true);
+                        }}
+                        className="inline-flex items-center px-2 py-0.5 rounded text-base font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+                        title={`View all ${role.permissions.length} permissions for ${role.display_name || role.name}`}
+                      >
+                        +{role.permissions.length - 3} more
+                      </button>
                     )}
                   </div>
-                </div>
-                {role.is_system && (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-base font-medium bg-blue-100 text-blue-800">
-                    System
-                  </span>
+                ) : (
+                  <p className="text-base text-gray-400">No permissions assigned</p>
                 )}
               </div>
 
-              {role.description && (
-                <p className="text-base text-gray-600 mb-4">{role.description}</p>
+              <div className="flex justify-between text-base text-gray-600">
+                <span>Users: <strong>{role.user_count || 0}</strong></span>
+                <span>Groups: <strong>{role.group_count || 0}</strong></span>
+              </div>
+
+              <div className="text-sm text-gray-500">
+                Created: {new Date(role.created_at).toLocaleDateString()}
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end space-x-2 pt-3 border-t border-gray-100">
+              <button
+                onClick={() => {
+                  setSelectedRole(role);
+                  setShowPermissionsModal(true);
+                }}
+                className="bg-green-100 hover:bg-green-200 text-green-700 hover:text-green-800 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+              >
+                Permissions
+              </button>
+              {canWrite && !role.is_system && (
+                <>
+                  <button
+                    onClick={() => {
+                      setSelectedRole(role);
+                      setShowEditModal(true);
+                    }}
+                    className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 hover:text-indigo-800 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => showDeleteConfirmation(role.id, role.display_name || role.name)}
+                    className="bg-red-100 hover:bg-red-200 text-red-700 hover:text-red-800 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                  >
+                    Delete
+                  </button>
+                </>
               )}
-
-              <div className="space-y-3 flex-1">
-                <div>
-                  <p className="text-base font-medium text-gray-700 mb-1">Permissions</p>
-                  {role.permissions && role.permissions.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {role.permissions.slice(0, 3).map((permission, index) => (
-                        <span
-                          key={index}
-                          className="inline-flex items-center px-2 py-0.5 rounded text-base font-medium bg-green-100 text-green-800"
-                        >
-                          {permission.display_name || permission.name}
-                        </span>
-                      ))}
-                      {role.permissions.length > 3 && (
-                        <button
-                          onClick={() => {
-                            setSelectedRole(role);
-                            setShowPermissionsModal(true);
-                          }}
-                          className="inline-flex items-center px-2 py-0.5 rounded text-base font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
-                          title={`View all ${role.permissions.length} permissions for ${role.display_name || role.name}`}
-                        >
-                          +{role.permissions.length - 3} more
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-base text-gray-400">No permissions assigned</p>
-                  )}
-                </div>
-
-                <div className="flex justify-between text-base text-gray-600">
-                  <span>Users: <strong>{role.user_count || 0}</strong></span>
-                  <span>Groups: <strong>{role.group_count || 0}</strong></span>
-                </div>
-
-                <div className="text-sm text-gray-500">
-                  Created: {new Date(role.created_at).toLocaleDateString()}
-                </div>
-              </div>
-
-              <div className="mt-4 flex justify-end space-x-2 pt-3 border-t border-gray-100">
-                <button
-                  onClick={() => {
-                    setSelectedRole(role);
-                    setShowPermissionsModal(true);
-                  }}
-                  className="bg-green-100 hover:bg-green-200 text-green-700 hover:text-green-800 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-                >
-                  Permissions
-                </button>
-                {canWrite && !role.is_system && (
-                  <>
-                    <button
-                      onClick={() => {
-                        setSelectedRole(role);
-                        setShowEditModal(true);
-                      }}
-                      className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 hover:text-indigo-800 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => showDeleteConfirmation(role.id, role.display_name || role.name)}
-                      className="bg-red-100 hover:bg-red-200 text-red-700 hover:text-red-800 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-                    >
-                      Delete
-                    </button>
-                  </>
-                )}
-              </div>
             </div>
           </div>
         ))}

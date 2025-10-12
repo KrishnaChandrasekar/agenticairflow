@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, fmtDate } from '../../utils/api';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faUsers, faIdBadge, faKey } from '@fortawesome/free-solid-svg-icons';
 
 const SecurityDashboard = ({ user, timezone, onSectionChange }) => {
   const [stats, setStats] = useState({
@@ -197,28 +199,28 @@ const SecurityDashboard = ({ user, timezone, onSectionChange }) => {
           title="Total Users"
           value={stats.users.total}
           subtitle={`${stats.users.active} active, ${stats.users.locked} locked`}
-          icon="👥"
+          icon={<FontAwesomeIcon icon={faUsers} size="2x" />}
           color="blue"
         />
         <StatCard
           title="Groups"
           value={stats.groups.total}
           subtitle="Organizational units"
-          icon="🏢"
+          icon={<FontAwesomeIcon icon={faUsers} size="2x" />}
           color="green"
         />
         <StatCard
           title="Roles"
           value={stats.roles.total}
           subtitle="Permission sets"
-          icon="👥"
+          icon={<FontAwesomeIcon icon={faIdBadge} size="2x" />}
           color="purple"
         />
         <StatCard
           title="Permissions"
           value={stats.permissions.total}
           subtitle="Access controls"
-          icon="🔐"
+          icon={<FontAwesomeIcon icon={faKey} size="2x" />}
           color="indigo"
         />
       </div>
