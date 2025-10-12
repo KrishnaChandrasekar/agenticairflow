@@ -53,7 +53,11 @@ class AgenticRunOperator(BaseOperator):
         self.run_as = run_as
         self.cwd = cwd
         self.env = env or {}
-        self.timeout_seconds = timeout_seconds
+        # Interpret 0, None, or unset as 'no timeout'
+        if timeout_seconds is None or timeout_seconds == 0:
+            self.timeout_seconds = None
+        else:
+            self.timeout_seconds = timeout_seconds
         self.priority = priority
         self.conn_id = conn_id
         self.poll_seconds = poll_seconds
@@ -107,18 +111,21 @@ class AgenticRunOperator(BaseOperator):
     def execute(self, context: Context):
         router_url, token, default_labels = _read_conn(self.conn_id)
         labels = {**default_labels, **self.route_labels}
+        job_payload = {
+            "command": self.command if isinstance(self.command, str) else " ".join(self.command),
+            "run_as": self.run_as,
+            "cwd": self.cwd,
+            "env": self.env,
+            "detached": True,
+            "dag_id": context["dag"].dag_id,
+            "task_id": context["task"].task_id,
+            "run_id": context["run_id"],
+        }
+        # Only include timeout_seconds if set and not None
+        if self.timeout_seconds is not None:
+            job_payload["timeout_seconds"] = self.timeout_seconds
         payload = {
-            "job": {
-                "command": self.command if isinstance(self.command, str) else " ".join(self.command),
-                "run_as": self.run_as,
-                "cwd": self.cwd,
-                "env": self.env,
-                "timeout_seconds": self.timeout_seconds,
-                "detached": True,
-                "dag_id": context["dag"].dag_id,
-                "task_id": context["task"].task_id,
-                "run_id": context["run_id"], 
-            },
+            "job": job_payload,
             "route": ({"agent_id": self.agent_id} if self.agent_id else {"labels": labels}),
             "priority": self.priority,
         }
