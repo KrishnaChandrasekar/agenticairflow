@@ -3,7 +3,7 @@ import { fetchJSON, toTs, API_BASE } from '../utils/api';
 
 // Hook for timezone management - replicating original UI behavior
 export const useTimezone = () => {
-  console.log('🚀 TIMEZONE HOOK CALLED!');
+  
   
   // Replicate detectBrowserTZ function from original UI
   const detectBrowserTZ = () => {
@@ -23,7 +23,7 @@ export const useTimezone = () => {
   
   // ALWAYS start with local timezone on fresh page loads (ignore stored preferences)
   const [timezone, setTimezone] = useState(() => {
-    console.log('🔍 FRESH PAGE LOAD - TIMEZONE INITIALIZATION:');
+  
     
     const detected = detectBrowserTZ();
     const fallback = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -31,50 +31,45 @@ export const useTimezone = () => {
     // Always use local timezone on page load (ignore localStorage)
     const initialTZ = detected || fallback;
     
-    console.log('  - Browser detected:', detected);
-    console.log('  - Fallback:', fallback);
-    console.log('  - Always using LOCAL timezone:', initialTZ);
+  
     
     // Clear any old stored timezone to prevent interference
     localStorage.removeItem("router_ui_tz");
     // Set fresh local timezone
     localStorage.setItem("router_ui_tz", initialTZ);
     
-    console.log('  ✅ Fresh start with local timezone on every page load');
+  
     
     return initialTZ;
   });
 
   const updateTimezone = useCallback((tz) => {
-    console.log('🎯 USER CHANGING timezone from', timezone, 'to', tz);
+  
     
     setTimezone(tz);
     localStorage.setItem("router_ui_tz", tz);
     window.TZ = tz;
     
-    console.log('✅ Timezone changed to:', tz);
-    console.log('� NOTE: This change is only for current page session');
-    console.log('🔄 Next page refresh will reset to local timezone');
+  
   }, [timezone]);
 
   const resetToLocal = useCallback(() => {
-    console.log('🏠 Resetting to local timezone');
+  
     const localTZ = detectBrowserTZ() || Intl.DateTimeFormat().resolvedOptions().timeZone;
     setTimezone(localTZ);
     localStorage.setItem("router_ui_tz", localTZ);
     window.TZ = localTZ;
-    console.log('✅ Reset to:', localTZ);
+  
     return localTZ;
   }, []);
 
   const clearTimezoneCache = useCallback(() => {
-    console.log('🗑️ CLEARING timezone cache');
+  
     localStorage.removeItem("router_ui_tz");
     const localTZ = detectBrowserTZ() || Intl.DateTimeFormat().resolvedOptions().timeZone;
     setTimezone(localTZ);
     window.TZ = localTZ;
-    console.log('✅ Cache cleared, using local:', localTZ);
-    console.log('📝 Next page load will start fresh with local timezone');
+  
     return localTZ;
   }, []);
 
@@ -94,7 +89,7 @@ export const useJobs = (autoRefresh = true, refreshInterval = 2000) => {
     try {
       return await fetchJSON(`${API_BASE}/status/${jobId}`);
     } catch (err) {
-      console.warn(`Failed to fetch status for job ${jobId}:`, err);
+  
       return null;
     }
   }, []);
@@ -114,7 +109,7 @@ export const useJobs = (autoRefresh = true, refreshInterval = 2000) => {
 
     if (potentiallyStaleJobs.length === 0) return jobsList;
 
-    console.log(`🔄 Refreshing status for ${potentiallyStaleJobs.length} potentially stale jobs`);
+  
 
     // Fetch fresh status for potentially stale jobs
     const statusPromises = potentiallyStaleJobs.map(job => 
@@ -130,7 +125,7 @@ export const useJobs = (autoRefresh = true, refreshInterval = 2000) => {
         
         if (statusResult && statusResult.status) {
           const freshStatus = statusResult.status;
-          console.log(`✅ Updated job ${job.job_id}: ${job.status} → ${freshStatus.status}`);
+          
           
           return {
             ...job,
@@ -148,7 +143,7 @@ export const useJobs = (autoRefresh = true, refreshInterval = 2000) => {
 
       return updatedJobs;
     } catch (err) {
-      console.warn('Failed to refresh some job statuses:', err);
+  
       return jobsList;
     }
   }, [fetchJobStatus]);

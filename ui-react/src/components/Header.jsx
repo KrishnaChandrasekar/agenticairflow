@@ -12,11 +12,6 @@ const Header = ({ timezone, onTimezoneChange, onResetToLocal, onClearCache, onSu
 
   const timezones = getSupportedTimezones();
 
-  // Debug: Log timezone changes
-  useEffect(() => {
-    console.log(`🎛️ HEADER: Received timezone prop: ${timezone}`);
-  }, [timezone]);
-
   const handleLogout = async () => {
     try {
       await fetch(`${API_BASE}/auth/logout`, {
@@ -24,7 +19,7 @@ const Header = ({ timezone, onTimezoneChange, onResetToLocal, onClearCache, onSu
         credentials: 'include'
       });
     } catch (error) {
-      console.error('Logout failed:', error);
+      
     } finally {
       onLogout();
       setShowUserMenu(false);
@@ -62,13 +57,8 @@ const Header = ({ timezone, onTimezoneChange, onResetToLocal, onClearCache, onSu
   }, [showTzMenu, showUserMenu]);
 
   const handleTimezoneClick = (tz) => {
-    console.log(`🖱️ HEADER: User clicked timezone: ${tz}`);
-    console.log(`🖱️ HEADER: Current timezone before change: ${timezone}`);
-    
     onTimezoneChange(tz);
     setShowTzMenu(false);
-    
-    console.log(`🖱️ HEADER: Called onTimezoneChange with: ${tz}`);
   };
 
   const resetToLocalTimezone = () => {

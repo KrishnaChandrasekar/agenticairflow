@@ -299,7 +299,7 @@ const AgentsTab = ({
       { value: 'Busy', label: 'Busy' }
     ];
 
-  // ...existing code...
+  
 
   const deregisterAgent = async (agentId) => {
     setConfirmAction({
