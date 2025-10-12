@@ -7,7 +7,7 @@ from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 from agentic_ssh.AgenticSSH_triggers import AgenticSSHRouterStatusTrigger
 
-CONN_ID_DEFAULT = "agentic_ssh_default"
+CONN_ID_DEFAULT = "agentic_run_default"
 
 def _conn_url_from_host(c) -> Optional[str]:
     scheme = (c.conn_type or "http").lower()
@@ -58,6 +58,51 @@ class AgenticRunOperator(BaseOperator):
         self.conn_id = conn_id
         self.poll_seconds = poll_seconds
         self.job_id: Optional[str] = None
+        
+        # Always setup Router status callbacks for Airflow-Router integration
+        self._setup_router_callbacks()
+
+    def _setup_router_callbacks(self):
+        """Setup Router notification callbacks on this operator"""
+        try:
+            from agentic_ssh.status_callbacks import notify_router_on_failure, notify_router_on_retry
+            
+            # Setup failure callback with enhanced logging
+            def enhanced_failure_callback(context):
+                self.log.info(f"[AGENTIC CALLBACK] Failure callback triggered for {self.task_id}")
+                notify_router_on_failure(context)
+            
+            # Setup retry callback with enhanced logging  
+            def enhanced_retry_callback(context):
+                self.log.info(f"[AGENTIC CALLBACK] Retry callback triggered for {self.task_id}")
+                notify_router_on_retry(context)
+            
+            # Setup failure callback
+            if hasattr(self, 'on_failure_callback') and self.on_failure_callback:
+                # Chain with existing callback
+                original_callback = self.on_failure_callback
+                def chained_failure_callback(context):
+                    enhanced_failure_callback(context)
+                    original_callback(context)
+                self.on_failure_callback = chained_failure_callback
+            else:
+                self.on_failure_callback = enhanced_failure_callback
+                
+            # Setup retry callback
+            if hasattr(self, 'on_retry_callback') and self.on_retry_callback:
+                # Chain with existing callback
+                original_callback = self.on_retry_callback
+                def chained_retry_callback(context):
+                    enhanced_retry_callback(context)
+                    original_callback(context)
+                self.on_retry_callback = chained_retry_callback
+            else:
+                self.on_retry_callback = enhanced_retry_callback
+                
+            self.log.info(f"[AGENTIC] Router callbacks setup completed for {self.task_id}")
+                
+        except ImportError as e:
+            print(f"[AgenticRunOperator] Warning: Could not setup Router callbacks: {e}")
 
     def execute(self, context: Context):
         router_url, token, default_labels = _read_conn(self.conn_id)
@@ -92,6 +137,10 @@ class AgenticRunOperator(BaseOperator):
             raise AirflowException(f"Router submit failed: HTTP {r.status_code} {r.text[:400]}")
         data = r.json()
         self.job_id = data["job_id"]
+        
+        # Store job_id in XCom for status callbacks
+        context["task_instance"].xcom_push(key="agentic_job_id", value=self.job_id)
+        self.log.info(f"Submitted job {self.job_id} to Router, stored in XCom")
 
         # Defer until terminal state
         return self.defer(
@@ -107,6 +156,66 @@ class AgenticRunOperator(BaseOperator):
     def execute_complete(self, context: Context, event: dict):
         st = event.get("status")
         rc = event.get("return_code")
+        
+        # Log the trigger event for debugging
+        self.log.info(f"[AGENTIC] execute_complete: trigger_event={event}")
+        
+        # Check if this is a manual failure scenario (Router callbacks always enabled)
+        task_instance = context.get('task_instance')
+        if task_instance:
+            current_state = task_instance.current_state()
+            self.log.info(f"[AGENTIC] execute_complete: router_job_status={st}, airflow_task_state={current_state}")
+            
+            # Enhanced manual failure detection
+            # Case 1: Task is already FAILED when execute_complete is called
+            if current_state and str(current_state).upper() == 'FAILED':
+                self.log.info("[AGENTIC] Task manually failed while deferred - ensuring Router notification")
+                try:
+                    from agentic_ssh.status_callbacks import _notify_router_status_change
+                    _notify_router_status_change(context, 'FAILED', 'DEFERRED task manually marked as FAILED in execute_complete')
+                    # Also try to store notification flag
+                    task_instance.xcom_push(key='manual_failure_notified', value=True)
+                except Exception as e:
+                    self.log.warning(f"[AGENTIC] Router notification failed: {e}")
+                # Continue with normal failure handling
+                
+            # Case 2: Trigger event indicates failure but Router job was still running
+            elif st in ["FAILED", "CANCELLED", "TIMEOUT"]:
+                self.log.info(f"[AGENTIC] Trigger reports job failure: {st}")
+                try:
+                    from agentic_ssh.status_callbacks import _notify_router_status_change
+                    _notify_router_status_change(context, 'FAILED', f'Job failed on agent: {st}')
+                except Exception as e:
+                    self.log.warning(f"[AGENTIC] Router notification failed: {e}")
+                    
+            # Case 3: Check for race conditions - if we have job_id but trigger says success,
+            # verify with Router if job is actually complete
+            elif st == "SUCCEEDED" and self.job_id:
+                try:
+                    router_url, token, _ = _read_conn(self.conn_id)
+                    job_status_response = requests.get(
+                        f"{router_url.rstrip('/')}/job/{self.job_id}/status",
+                        headers={"Authorization": f"Bearer {token}"} if token else {},
+                        timeout=10,
+                    )
+                    if job_status_response.status_code == 200:
+                        router_status = job_status_response.json().get('status')
+                        if router_status and router_status != 'SUCCEEDED':
+                            self.log.warning(f"[AGENTIC] Status mismatch: trigger says SUCCESS but Router says {router_status}")
+                except Exception as e:
+                    self.log.debug(f"[AGENTIC] Could not verify job status with Router: {e}")
+        
+        # Enhanced failure detection for edge cases
+        if event.get("error") or (st and st != "SUCCEEDED"):
+            # This is a failure case - ensure Router is notified
+            self.log.info(f"[AGENTIC] Job failed with status {st}, ensuring Router notification")
+            try:
+                from agentic_ssh.status_callbacks import _notify_router_status_change
+                error_msg = event.get("error", f"Job failed with status: {st}")
+                _notify_router_status_change(context, 'FAILED', error_msg)
+            except Exception as e:
+                self.log.warning(f"[AGENTIC] Router notification failed: {e}")
+        
         if st == "SUCCEEDED" and (rc in (0, "0", None)):
             return
         # Try to pull logs for context (best-effort)

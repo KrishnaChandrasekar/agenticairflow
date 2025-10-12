@@ -1143,6 +1143,157 @@ def list_jobs():
             })
     return {"jobs": out}
 
+@app.post("/jobs/update_status")
+@api.doc('update_job_status', security='Bearer')
+@api.expect(api.model('JobStatusUpdate', {
+    'dag_id': fields.String(required=True, description='DAG identifier from Airflow'),
+    'task_id': fields.String(required=True, description='Task identifier from Airflow'),
+    'run_id': fields.String(required=True, description='Run identifier from Airflow'),
+    'job_id': fields.String(description='Optional job identifier for faster lookup'),
+    'status': fields.String(required=True, description='New job status (e.g., FAILED)'),
+    'reason': fields.String(description='Reason for status change (optional)')
+}))
+@api.marshal_with(api.model('JobStatusUpdateResponse', {
+    'success': fields.Boolean(description='Whether the update was successful'),
+    'job_id': fields.String(description='Job identifier that was updated'),
+    'previous_status': fields.String(description='Previous job status'),
+    'new_status': fields.String(description='New job status'),
+    'agent_notified': fields.Boolean(description='Whether the agent was notified to stop the job'),
+    'message': fields.String(description='Additional information about the update')
+}))
+def update_job_status():
+    """Update job status from Airflow (e.g., when user marks task as Failed)"""
+    
+    # Check authorization with permission
+    if not auth_ok_with_permission(request, 'jobs', 'write'):
+        log_audit_event('unauthorized_access', resource='jobs', details={'action': 'write', 'endpoint': '/jobs/update_status'}, success=False)
+        return {"error": "unauthorized - requires jobs:write permission"}, 401
+
+    data = request.get_json(force=True) or {}
+    dag_id = data.get("dag_id", "").strip()
+    task_id = data.get("task_id", "").strip()
+    run_id = data.get("run_id", "").strip()
+    job_id = data.get("job_id", "").strip()
+    new_status = data.get("status", "").strip().upper()
+    reason = data.get("reason", "").strip()
+
+    if not dag_id or not task_id or not run_id or not new_status:
+        return {"error": "dag_id, task_id, run_id, and status are required"}, 400
+
+    if new_status not in ["FAILED", "SUCCEEDED", "CANCELLED"]:
+        return {"error": "status must be one of: FAILED, SUCCEEDED, CANCELLED"}, 400
+
+    print(f"[ROUTER DEBUG] Received status update from Airflow: dag_id={dag_id}, task_id={task_id}, run_id={run_id}, job_id={job_id}, status={new_status}", file=sys.stderr)
+
+    with Session() as s:
+        # Find the job using reverse mapping
+        query = s.query(Job).filter(
+            Job.dag_id == dag_id,
+            Job.task_id == task_id,
+            Job.run_id == run_id
+        )
+        
+        # If job_id is provided, add it as an additional filter for faster lookup
+        if job_id:
+            query = query.filter(Job.job_id == job_id)
+        
+        job = query.first()
+        
+        if not job:
+            print(f"[ROUTER DEBUG] Job not found with dag_id={dag_id}, task_id={task_id}, run_id={run_id}, job_id={job_id}", file=sys.stderr)
+            return {"error": "job not found with provided identifiers"}, 404
+        
+        previous_status = job.status
+        agent_notified = False
+        message = f"Status updated from Airflow: {previous_status} -> {new_status}"
+        
+        # Enhanced agent notification logic to handle various scenarios
+        should_notify_agent = False
+        notification_reason = ""
+        
+        # Case 1: Job was RUNNING and is being failed/cancelled (original logic)
+        if previous_status == "RUNNING" and new_status in ["FAILED", "CANCELLED"]:
+            should_notify_agent = True
+            notification_reason = f"Job marked as {new_status} by Airflow user"
+        
+        # Case 2: Job was SUCCEEDED but being manually failed (agent might still be running)
+        elif previous_status == "SUCCEEDED" and new_status == "FAILED":
+            should_notify_agent = True
+            notification_reason = "Job manually failed after completion - ensuring cleanup"
+        
+        # Case 3: Any job being failed where agent is assigned (safety net)
+        elif new_status == "FAILED" and job.agent_id and previous_status in ["RUNNING", "SUCCEEDED", "SUBMITTED"]:
+            should_notify_agent = True
+            notification_reason = f"Job failed after {previous_status} - ensuring agent cleanup"
+        
+        if should_notify_agent and job.agent_id:
+            agent = s.get(Agent, job.agent_id)
+            if agent and agent.active:
+                try:
+                    # Send stop/terminate command to agent
+                    stop_response = requests.post(
+                        f"{agent.url.rstrip('/')}/stop/{job.job_id}",
+                        headers={"X-Agent-Token": AGENT_TOKEN},
+                        json={"reason": reason or notification_reason},
+                        timeout=10
+                    )
+                    
+                    if stop_response.status_code == 200:
+                        agent_notified = True
+                        message += f". Agent {agent.agent_id} notified to stop job."
+                        print(f"[ROUTER DEBUG] Successfully notified agent {agent.agent_id} to stop job {job.job_id} (reason: {notification_reason})", file=sys.stderr)
+                    else:
+                        message += f". Failed to notify agent {agent.agent_id} (HTTP {stop_response.status_code})."
+                        print(f"[ROUTER DEBUG] Failed to notify agent {agent.agent_id}: HTTP {stop_response.status_code} - {stop_response.text[:200]}", file=sys.stderr)
+                        
+                except Exception as e:
+                    message += f". Failed to notify agent {agent.agent_id}: {e}."
+                    print(f"[ROUTER DEBUG] Exception notifying agent {agent.agent_id}: {e}", file=sys.stderr)
+        
+        # Update job status in database
+        job.status = new_status
+        job.updated_at = now_utc()
+        
+        # Set finished_at timestamp for terminal states
+        if new_status in ["FAILED", "SUCCEEDED", "CANCELLED"] and not job.finished_at:
+            job.finished_at = now_utc()
+        
+        # Update note with reason and source
+        source_note = f"Status changed by Airflow user to {new_status}"
+        if reason:
+            source_note += f" (reason: {reason})"
+        
+        if job.note:
+            job.note = f"{job.note}; {source_note}"
+        else:
+            job.note = source_note
+        
+        s.commit()
+        
+        # Log the status update
+        log_audit_event('update_job_status', resource='job', resource_id=job.job_id,
+                       details={
+                           'dag_id': dag_id,
+                           'task_id': task_id, 
+                           'run_id': run_id,
+                           'previous_status': previous_status,
+                           'new_status': new_status,
+                           'reason': reason,
+                           'agent_notified': agent_notified,
+                           'source': 'airflow'
+                       })
+        
+        print(f"[ROUTER DEBUG] Updated job {job.job_id} status: {previous_status} -> {new_status}, agent_notified={agent_notified}", file=sys.stderr)
+        
+        return {
+            "success": True,
+            "job_id": job.job_id,
+            "previous_status": previous_status,
+            "new_status": new_status,
+            "agent_notified": agent_notified,
+            "message": message
+        }
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
 
