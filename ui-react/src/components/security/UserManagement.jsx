@@ -442,6 +442,18 @@ const UserModal = ({ title, user, onSave, onCancel, groups, roles }) => {
     must_change_password: user?.must_change_password || false
   });
 
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onCancel();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
+
   const handleSubmit = (e) => {
     e.preventDefault();
     const submitData = { ...formData };

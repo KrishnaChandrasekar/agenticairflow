@@ -558,6 +558,18 @@ const GroupModal = ({ title, group, onSave, onCancel, roles }) => {
     role_ids: group?.roles?.map(r => r.id) || []
   });
 
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onCancel();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
+
   const handleSubmit = (e) => {
     e.preventDefault();
     onSave(formData);

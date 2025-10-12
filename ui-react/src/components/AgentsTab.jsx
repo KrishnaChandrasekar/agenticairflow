@@ -55,6 +55,8 @@ const AgentsTab = ({
   const [heartbeatDropdownOpen, setHeartbeatDropdownOpen] = useState(false);
   const [capabilityDropdownOpen, setCapabilityDropdownOpen] = useState(false);
   const [banner, setBanner] = useState({ show: false, message: '', type: 'info' });
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
   const [jobCounts, setJobCounts] = useState({});
 
   // Calculate job counts for each agent based on jobs and timeRange
@@ -124,6 +126,21 @@ const AgentsTab = ({
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [pageSizeDropdownOpen, stateDropdownOpen, heartbeatDropdownOpen, capabilityDropdownOpen]);
+
+  // Handle ESC key to close confirmation modal
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && showConfirmModal) {
+        setShowConfirmModal(false);
+        setConfirmAction(null);
+      }
+    };
+
+    if (showConfirmModal) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [showConfirmModal]);
 
   // Filter and sort agents
   const filteredAgents = useMemo(() => {
@@ -285,22 +302,26 @@ const AgentsTab = ({
   // ...existing code...
 
   const deregisterAgent = async (agentId) => {
-    setBanner({
-      show: true,
-      type: 'confirm',
-      message: `Deregister agent ${agentId}?`,
-      agentId
+    setConfirmAction({
+      title: 'Deregister Agent',
+      message: `Are you sure you want to deregister agent "${agentId}"? This action cannot be undone.`,
+      agentId,
+      action: 'deregister'
     });
+    setShowConfirmModal(true);
   };
 
-  const confirmDeregister = async (agentId) => {
+  const handleConfirmAction = async () => {
+    if (!confirmAction) return;
+    
+    setShowConfirmModal(false);
     setBanner({ show: true, type: 'loading', message: 'Processing...' });
     
     try {
       const resp = await fetch(`${API_BASE}/agents/deregister`, {
         method: "POST",
         headers: getAuthHeaders(),
-        body: JSON.stringify({ agent_id: agentId })
+        body: JSON.stringify({ agent_id: confirmAction.agentId })
       });
       const data = await resp.json();
       
@@ -308,7 +329,7 @@ const AgentsTab = ({
         setBanner({
           show: true,
           type: 'success',
-          message: `Agent ${agentId} deregistered.`
+          message: `Agent ${confirmAction.agentId} deregistered.`
         });
         setTimeout(() => setBanner({ show: false }), 2500);
         refreshAgents();
@@ -326,6 +347,13 @@ const AgentsTab = ({
         message: `Request failed: ${e.message}`
       });
     }
+    
+    setConfirmAction(null);
+  };
+
+  const handleCancelAction = () => {
+    setShowConfirmModal(false);
+    setConfirmAction(null);
   };
 
   const getSortIndicator = (key) => {
@@ -368,47 +396,17 @@ const AgentsTab = ({
 
   return (
     <div>
-      {/* Banner */}
-      {banner.show && (
+      {/* Banner - Only for success/error/loading, not confirm */}
+      {banner.show && banner.type !== 'confirm' && (
         <div className={`mb-4 p-4 rounded-xl text-body shadow-md hover:shadow-lg transition-all duration-300 ${
           banner.type === 'success' ? 'bg-gradient-to-r from-green-50 to-emerald-50 text-green-800 border-2 border-green-300' :
           banner.type === 'error' ? 'bg-gradient-to-r from-red-50 to-pink-50 text-red-800 border-2 border-red-300' :
-          banner.type === 'confirm' ? 'bg-gradient-to-r from-amber-50 to-orange-50 text-orange-800 border-2 border-orange-300' :
           'bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-800 border-2 border-blue-300'
         }`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              {banner.type === 'confirm' && (
-                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-orange-100 to-amber-100 border-2 border-orange-300 flex items-center justify-center">
-                  <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                  </svg>
-                </div>
-              )}
               <span className="font-medium">{banner.message}</span>
             </div>
-            {banner.type === 'confirm' && (
-              <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => confirmDeregister(banner.agentId)}
-                  className="inline-flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-red-100 to-pink-100 border-2 border-red-300 rounded-lg text-red-800 btn-text-small hover:from-red-200 hover:to-pink-200 hover:border-red-400 transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-red-300"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Confirm
-                </button>
-                <button 
-                  onClick={() => setBanner({ show: false })}
-                  className="inline-flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-slate-100 to-gray-100 border-2 border-slate-300 rounded-lg text-slate-700 btn-text-small hover:from-slate-200 hover:to-gray-200 hover:border-slate-400 transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-slate-300"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Cancel
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -834,6 +832,43 @@ const AgentsTab = ({
           </tbody>
         </table>
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && confirmAction && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-medium text-gray-900">{confirmAction.title}</h3>
+            </div>
+            <div className="px-6 py-4">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0">
+                  <svg className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-700">{confirmAction.message}</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+              <button
+                onClick={handleCancelAction}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmAction}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                Deregister
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
