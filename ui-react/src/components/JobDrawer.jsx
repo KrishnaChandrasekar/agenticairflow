@@ -97,7 +97,7 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
         });
         
       } catch (err) {
-        console.error('Failed to fetch job data:', err);
+  
       } finally {
         if (isInitialLoad) {
           setLoading(false);

@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faUserGear, faUsers, faFileLines, faShieldHalved, faKey, faUser } from '@fortawesome/free-solid-svg-icons';
 import UserManagement from './security/UserManagement';
 import GroupManagement from './security/GroupManagement';
 import RoleManagement from './security/RoleManagement';
@@ -6,7 +8,7 @@ import PermissionManagement from './security/PermissionManagement';
 import AuditLogs from './security/AuditLogs';
 import SecurityDashboard from './security/SecurityDashboard';
 
-const SecurityTab = ({ user }) => {
+const SecurityTab = ({ user, timezone }) => {
   const [activeSection, setActiveSection] = useState('dashboard');
   const [hasPermission, setHasPermission] = useState({});
 
@@ -29,12 +31,12 @@ const SecurityTab = ({ user }) => {
   }, [user]);
 
   const sections = [
-    { id: 'dashboard', name: 'Security Overview', icon: '🛡️', permission: 'dashboard' },
-    { id: 'users', name: 'User Management', icon: '�', permission: 'users' },
-    { id: 'groups', name: 'Group Management', icon: '🏢', permission: 'groups' },
-    { id: 'roles', name: 'Role Management', icon: '👥', permission: 'roles' },
-    { id: 'permissions', name: 'Permissions', icon: '🔐', permission: 'permissions' },
-    { id: 'audit', name: 'Audit Logs', icon: '📋', permission: 'audit' }
+    { id: 'dashboard', name: 'Security Overview', icon: <FontAwesomeIcon icon={faShieldHalved} className="text-xl mr-2 text-indigo-600" />, permission: 'dashboard' },
+    { id: 'users', name: 'User Management', icon: <FontAwesomeIcon icon={faUser} className="text-xl mr-2 text-blue-600" />, permission: 'users' },
+    { id: 'groups', name: 'Group Management', icon: <FontAwesomeIcon icon={faUsers} className="text-xl mr-2 text-green-600" />, permission: 'groups' },
+    { id: 'roles', name: 'Role Management', icon: <FontAwesomeIcon icon={faUserGear} className="text-xl mr-2 text-purple-600" />, permission: 'roles' },
+    { id: 'permissions', name: 'Permissions', icon: <FontAwesomeIcon icon={faKey} className="text-xl mr-2 text-yellow-600" />, permission: 'permissions' },
+    { id: 'audit', name: 'Audit Logs', icon: <FontAwesomeIcon icon={faFileLines} className="text-xl mr-2 text-gray-600" />, permission: 'audit' }
   ];
 
   const availableSections = sections.filter(section => hasPermission[section.permission]);
@@ -72,7 +74,7 @@ const SecurityTab = ({ user }) => {
   const renderActiveSection = () => {
     switch (activeSection) {
       case 'dashboard':
-        return <SecurityDashboard user={user} />;
+        return <SecurityDashboard user={user} timezone={timezone} onSectionChange={setActiveSection} />;
       case 'users':
         return <UserManagement user={user} canWrite={hasPermission.canWrite} />;
       case 'groups':
@@ -82,9 +84,9 @@ const SecurityTab = ({ user }) => {
       case 'permissions':
         return <PermissionManagement user={user} canWrite={hasPermission.canWrite} />;
       case 'audit':
-        return <AuditLogs user={user} />;
+        return <AuditLogs user={user} timezone={timezone} />;
       default:
-        return <SecurityDashboard user={user} />;
+        return <SecurityDashboard user={user} timezone={timezone} onSectionChange={setActiveSection} />;
     }
   };
 
@@ -93,16 +95,16 @@ const SecurityTab = ({ user }) => {
       {/* Security Navigation */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex space-x-8" aria-label="Security sections">
+          <nav className="flex space-x-2 py-2" aria-label="Security sections">
             {availableSections.map((section) => (
               <button
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
-                className={`py-4 px-1 border-b-2 font-medium text-base whitespace-nowrap transition-colors duration-200 ${
-                  activeSection === section.id
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                className={`flex items-center px-4 py-2 rounded-lg font-medium text-base whitespace-nowrap transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2
+                  ${activeSection === section.id
+                    ? 'bg-indigo-50 text-indigo-700 shadow border border-indigo-200'
+                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-indigo-600 border border-transparent'}
+                `}
               >
                 <span className="mr-2" role="img" aria-label={section.name}>
                   {section.icon}

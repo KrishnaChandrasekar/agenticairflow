@@ -1,5 +1,6 @@
 import { API_BASE } from '../../utils/api';
 import React, { useState, useEffect } from 'react';
+import Dropdown from '../Dropdown';
 
 const GroupManagement = ({ user, canWrite }) => {
   // All state declarations at the top
@@ -16,6 +17,7 @@ const GroupManagement = ({ user, canWrite }) => {
   const [filterRole, setFilterRole] = useState('');
   const [filterSystem, setFilterSystem] = useState('all');
   const [filterMemberCount, setFilterMemberCount] = useState('all');
+  // No longer needed: dropdown open states
   
   // Member management state
   const [members, setMembers] = useState({}); // { groupId: [user, ...] }
@@ -338,36 +340,38 @@ const GroupManagement = ({ user, canWrite }) => {
           onChange={(e) => setSearchTerm(e.target.value)}
           className="block w-full max-w-md px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
         />
-        <select
+        <Dropdown
+          options={[{ value: '', label: 'All Roles' }, ...roles.map(role => ({ value: role.id, label: role.display_name || role.name }))]}
           value={filterRole}
-          onChange={e => setFilterRole(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-        >
-          <option value="">All Roles</option>
-          {roles.map(role => (
-            <option key={role.id} value={role.id}>{role.display_name || role.name}</option>
-          ))}
-        </select>
-        <select
+          onChange={setFilterRole}
+          placeholder="All Roles"
+          width="180px"
+        />
+        <Dropdown
+          options={[{ value: 'all', label: 'All Groups' }, { value: 'system', label: 'System Groups' }, { value: 'custom', label: 'Custom Groups' }]}
           value={filterSystem}
-          onChange={e => setFilterSystem(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-        >
-          <option value="all">All Groups</option>
-          <option value="system">System Groups</option>
-          <option value="custom">Custom Groups</option>
-        </select>
-        <select
+          onChange={setFilterSystem}
+          placeholder="All Groups"
+          width="180px"
+        />
+        <Dropdown
+          options={[{ value: 'all', label: 'All Member Counts' }, { value: '0', label: 'No Members' }, { value: '1-5', label: '1-5 Members' }, { value: '6-20', label: '6-20 Members' }, { value: '>20', label: 'More than 20' }]}
           value={filterMemberCount}
-          onChange={e => setFilterMemberCount(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-        >
-          <option value="all">All Member Counts</option>
-          <option value="0">No Members</option>
-          <option value="1-5">1-5 Members</option>
-          <option value="6-20">6-20 Members</option>
-          <option value=">20">More than 20</option>
-        </select>
+          onChange={setFilterMemberCount}
+          placeholder="All Member Counts"
+          width="180px"
+        />
+          <button
+            type="button"
+            className="ml-2 px-4 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-200 transition"
+            onClick={() => {
+              setFilterRole('');
+              setFilterSystem('all');
+              setFilterMemberCount('all');
+            }}
+          >
+            Reset
+          </button>
       </div>
 
       {/* Groups Grid */}
@@ -553,6 +557,18 @@ const GroupModal = ({ title, group, onSave, onCancel, roles }) => {
     description: group?.description || '',
     role_ids: group?.roles?.map(r => r.id) || []
   });
+
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onCancel();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
 
   const handleSubmit = (e) => {
     e.preventDefault();

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { API_BASE } from '../utils/api';
 
 const RegisterModal = ({ show, onClose, onRegisterSuccess }) => {
@@ -11,6 +11,20 @@ const RegisterModal = ({ show, onClose, onRegisterSuccess }) => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && show) {
+        onClose();
+      }
+    };
+
+    if (show) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [show, onClose]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;

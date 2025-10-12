@@ -43,7 +43,7 @@ function App() {
         setUser(null);
       }
     } catch (error) {
-      console.error('Auth check failed:', error);
+  
       setUser(null);
     } finally {
       setAuthLoading(false);
@@ -195,6 +195,7 @@ function App() {
             {activeTab === 'security' && (
               <SecurityTab
                 user={user}
+                timezone={timezone}
               />
             )}
           </div>
