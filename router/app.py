@@ -684,6 +684,119 @@ def agents_register():
     return jsonify({"ok": True, "agent_id": agent_id})
 
 
+@app.post("/agents/reconcile")
+@api.doc('agent_reconcile', security='Agent Token')
+@api.expect(api.model('AgentReconcileRequest', {
+    'agent_id': fields.String(required=True, description='Agent identifier'),
+    'jobs': fields.List(fields.Nested(api.model('JobStatus', {
+        'job_id': fields.String(required=True, description='Job identifier'),
+        'status': fields.String(required=True, description='Job status (RUNNING, SUCCEEDED, FAILED)'),
+        'pid': fields.Integer(description='Process ID (if running)'),
+        'rc': fields.Integer(description='Return code (if completed)')
+    })), required=True, description='List of job statuses from agent')
+}))
+@api.marshal_with(api.model('AgentReconcileResponse', {
+    'reconciled': fields.Integer(description='Number of jobs reconciled'),
+    'force_failed_preserved': fields.Integer(description='Number of force-failed jobs preserved'),
+    'updated': fields.List(fields.String, description='List of updated job IDs'),
+    'message': fields.String(description='Reconciliation summary')
+}))
+def agents_reconcile():
+    """Agent job status reconciliation endpoint"""
+    
+    # Check agent token authorization
+    if request.headers.get("X-Agent-Token") != AGENT_TOKEN:
+        return {"error": "unauthorized - invalid agent token"}, 401
+
+    data = request.get_json(force=True) or {}
+    agent_id = data.get("agent_id", "").strip()
+    jobs = data.get("jobs", [])
+    
+    if not agent_id:
+        return {"error": "agent_id is required"}, 400
+    
+    if not isinstance(jobs, list):
+        return {"error": "jobs must be an array"}, 400
+
+    print(f"[ROUTER DEBUG] Reconciliation from agent {agent_id}: {len(jobs)} jobs", file=sys.stderr)
+    
+    reconciled_count = 0
+    force_failed_preserved = 0
+    updated_job_ids = []
+    
+    with Session() as s:
+        # Verify agent exists
+        agent = s.get(Agent, agent_id)
+        if not agent:
+            return {"error": f"agent {agent_id} not found"}, 404
+        
+        for job_data in jobs:
+            job_id = job_data.get("job_id", "").strip()
+            agent_status = job_data.get("status", "").strip().upper()
+            agent_pid = job_data.get("pid")
+            agent_rc = job_data.get("rc")
+            
+            if not job_id or not agent_status:
+                continue
+                
+            # Find job in database
+            job = s.get(Job, job_id)
+            if not job:
+                print(f"[ROUTER DEBUG] Reconcile: Job {job_id} not found in database", file=sys.stderr)
+                continue
+            
+            # Skip reconciliation for force-failed jobs
+            if hasattr(job, 'force_failed') and job.force_failed:
+                force_failed_preserved += 1
+                print(f"[ROUTER DEBUG] Reconcile: Preserving force-failed status for job {job_id}", file=sys.stderr)
+                continue
+            
+            current_status = job.status
+            should_update = False
+            
+            # Reconciliation logic based on agent status
+            if agent_status == "SUCCEEDED" and agent_rc is not None:
+                if current_status != "SUCCEEDED":
+                    job.status = "SUCCEEDED"
+                    job.rc = agent_rc
+                    job.finished_at = now_utc()
+                    should_update = True
+                    
+            elif agent_status == "FAILED" and agent_rc is not None:
+                if current_status != "FAILED":
+                    job.status = "FAILED"
+                    job.rc = agent_rc
+                    job.finished_at = now_utc()
+                    should_update = True
+                    
+            elif agent_status == "RUNNING":
+                if current_status not in ["RUNNING", "SUCCEEDED", "FAILED"]:
+                    job.status = "RUNNING"
+                    job.started_at = job.started_at or now_utc()
+                    should_update = True
+            
+            if should_update:
+                job.updated_at = now_utc()
+                reconciled_count += 1
+                updated_job_ids.append(job_id)
+                print(f"[ROUTER DEBUG] Reconcile: Updated job {job_id}: {current_status} -> {job.status} (rc={job.rc})", file=sys.stderr)
+        
+        s.commit()
+    
+    message = f"Reconciled {reconciled_count} jobs for agent {agent_id}"
+    if force_failed_preserved > 0:
+        message += f", preserved {force_failed_preserved} force-failed jobs"
+    
+    print(f"[ROUTER DEBUG] {message}", file=sys.stderr)
+    
+    return {
+        "reconciled": reconciled_count,
+        "force_failed_preserved": force_failed_preserved,
+        "updated": updated_job_ids,
+        "message": message
+    }
+
+
 @app.post("/submit")
 @api.doc('submit_job', security='Bearer')
 @api.expect(job_submit_model)
@@ -861,7 +974,10 @@ def submit():
     'run_id': fields.String(description='Run identifier (from Airflow) for traceability'),
     'started_at': fields.DateTime(description='Job execution start timestamp'),
     'finished_at': fields.DateTime(description='Job execution completion timestamp'),
-    'execution_time': fields.String(description='Human-readable execution duration')
+    'execution_time': fields.String(description='Human-readable execution duration'),
+    'force_failed': fields.Boolean(description='Whether the job was manually failed from Airflow UI'),
+    'force_failed_reason': fields.String(description='Reason for force failure'),
+    'actual_rc': fields.Integer(description='Actual return code from agent (preserved when force failed)')
 }))
 def status(job_id: str):
     """Get job status and details"""
@@ -875,6 +991,35 @@ def status(job_id: str):
         if not j:
             return {"error":"not found"}, 404
         agent = s.get(Agent, j.agent_id) if j.agent_id else None
+
+    # PRIORITY: Force-failed jobs should always return database status, not agent status
+    if hasattr(j, 'force_failed') and j.force_failed:
+        print(f"[ROUTER DEBUG] Force-failed job {job_id}, returning database status instead of agent status", file=sys.stderr)
+        response = {
+            "job_id": j.job_id,
+            "status": j.status,
+            "rc": j.rc,
+            "agent_id": j.agent_id,
+            "log_path": j.log_path,
+            "note": j.note,
+            "dag_id": j.dag_id,
+            "task_id": j.task_id,
+            "run_id": j.run_id if j.run_id else '-',
+            "started_at": j.started_at.isoformat() if j.started_at else None,
+            "finished_at": j.finished_at.isoformat() if j.finished_at else None,
+            "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
+        }
+        # Add force failure information
+        force_failed_val = getattr(j, 'force_failed', False)
+        print(f"[ROUTER DEBUG] Adding force failure info: force_failed={force_failed_val}", file=sys.stderr)
+        response["force_failed"] = bool(force_failed_val)
+        response["force_failed_reason"] = getattr(j, 'force_failed_reason', None)
+        actual_rc = getattr(j, 'actual_rc', None)
+        print(f"[ROUTER DEBUG] Adding actual_rc: {actual_rc}", file=sys.stderr)
+        if actual_rc is not None:
+            response["actual_rc"] = actual_rc
+        print(f"[ROUTER DEBUG] Final response keys: {list(response.keys())}", file=sys.stderr)
+        return response
 
     # Handle jobs waiting for agent sync - try to reconnect if agent is back
     if j.status == "PENDING_AGENT_SYNC" and agent and agent.active:
@@ -900,7 +1045,7 @@ def status(job_id: str):
         with Session() as s:
             j = s.get(Job, job_id)
             print(f"[ROUTER DEBUG] No agent found for job {job_id}, returning DB status={j.status} rc={j.rc}", file=sys.stderr)
-            return {
+            response = {
                 "job_id": j.job_id, "status": j.status, "rc": j.rc,
                 "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
                 "dag_id": j.dag_id,
@@ -910,6 +1055,13 @@ def status(job_id: str):
                 "finished_at": j.finished_at.isoformat() if j.finished_at else None,
                 "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
             }
+            # Add force failure information if applicable
+            if hasattr(j, 'force_failed') and j.force_failed:
+                response["force_failed"] = True
+                response["force_failed_reason"] = getattr(j, 'force_failed_reason', None)
+                if hasattr(j, 'actual_rc') and j.actual_rc is not None:
+                    response["actual_rc"] = j.actual_rc
+            return response
 
     try:
         agent_resp = requests.get(f"{agent.url.rstrip('/')}/status/{job_id}",
@@ -945,7 +1097,7 @@ def status(job_id: str):
         with Session() as s:
             j = s.get(Job, job_id)
             print(f"[ROUTER DEBUG] Agent probe failed for job {job_id}, status={j.status} rc={j.rc}", file=sys.stderr)
-            return {
+            response = {
                 "job_id": j.job_id, "status": j.status, "rc": j.rc,
                 "agent_id": j.agent_id, "log_path": j.log_path, "note": j.note,
                 "dag_id": j.dag_id,
@@ -955,6 +1107,13 @@ def status(job_id: str):
                 "finished_at": j.finished_at.isoformat() if j.finished_at else None,
                 "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
             }
+            # Add force failure information if applicable
+            if hasattr(j, 'force_failed') and j.force_failed:
+                response["force_failed"] = True
+                response["force_failed_reason"] = getattr(j, 'force_failed_reason', None)
+                if hasattr(j, 'actual_rc') and j.actual_rc is not None:
+                    response["actual_rc"] = j.actual_rc
+            return response
 
     with Session() as s:
         j = s.get(Job, job_id)
@@ -1049,7 +1208,8 @@ def status(job_id: str):
         print(f"[ROUTER DEBUG] Raw run_id value: {repr(j.run_id)} (type: {type(j.run_id)})", file=sys.stderr)
         processed_run_id = j.run_id if j.run_id else '-'
         print(f"[ROUTER DEBUG] Processed run_id: {repr(processed_run_id)}", file=sys.stderr)
-        return {
+        # Build response with force failure information if applicable
+        response = {
             "job_id": j.job_id,
             "status": j.status,
             "rc": j.rc,
@@ -1063,6 +1223,16 @@ def status(job_id: str):
             "finished_at": j.finished_at.isoformat() if j.finished_at else None,
             "execution_time": format_execution_time(j.started_at, j.finished_at, j.status),
         }
+        
+        # Add force failure information if applicable
+        if hasattr(j, 'force_failed') and j.force_failed:
+            response["force_failed"] = True
+            response["force_failed_reason"] = getattr(j, 'force_failed_reason', None)
+            if hasattr(j, 'actual_rc') and j.actual_rc is not None:
+                response["actual_rc"] = j.actual_rc
+                response["rc"] = j.rc  # This is the overridden failure RC
+        
+        return response
 
 @app.get("/logs/<job_id>")
 def logs(job_id: str):
@@ -1250,9 +1420,34 @@ def update_job_status():
                     message += f". Failed to notify agent {agent.agent_id}: {e}."
                     print(f"[ROUTER DEBUG] Exception notifying agent {agent.agent_id}: {e}", file=sys.stderr)
         
+        # Handle force failure scenarios
+        is_force_failure = False
+        if new_status == "FAILED":
+            # Detect force failure scenarios:
+            # 1. Job was SUCCEEDED and being manually failed
+            # 2. Job was RUNNING but being manually failed (not due to agent/job error)
+            if previous_status == "SUCCEEDED":
+                is_force_failure = True
+                # Preserve the actual successful RC
+                if hasattr(job, 'actual_rc') and job.actual_rc is None and job.rc is not None:
+                    job.actual_rc = job.rc
+            elif previous_status == "RUNNING" and reason and ("manual" in reason.lower() or "user" in reason.lower() or "airflow" in reason.lower()):
+                is_force_failure = True
+        
         # Update job status in database
         job.status = new_status
         job.updated_at = now_utc()
+        
+        # Handle force failure tracking
+        if is_force_failure:
+            job.force_failed = True
+            job.force_failed_reason = reason or f"Job manually marked as FAILED from Airflow (was {previous_status})"
+            # Set RC to indicate force failure but preserve actual RC
+            if hasattr(job, 'actual_rc') and job.actual_rc is None and job.rc is not None:
+                job.actual_rc = job.rc
+            job.rc = 1  # Set failed RC for UI display
+            message += " [FORCE FAILED - will not be overridden by agent reconciliation]"
+            print(f"[ROUTER DEBUG] Job {job.job_id} marked as force failed: {job.force_failed_reason}", file=sys.stderr)
         
         # Set finished_at timestamp for terminal states
         if new_status in ["FAILED", "SUCCEEDED", "CANCELLED"] and not job.finished_at:
@@ -1262,6 +1457,8 @@ def update_job_status():
         source_note = f"Status changed by Airflow user to {new_status}"
         if reason:
             source_note += f" (reason: {reason})"
+        if is_force_failure:
+            source_note += " [FORCE FAILED]"
         
         if job.note:
             job.note = f"{job.note}; {source_note}"

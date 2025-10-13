@@ -123,15 +123,37 @@ def _notify_router_status_change(
         # Setup hook and notify Router
         hook = AgenticRouterStatusHook(conn_id=conn_id)
         
-        # Build reason if not provided
+        # Enhanced reason detection for force failures
         if not reason:
             if status == 'FAILED':
-                # Try to get exception info
+                # Detect force failure scenarios
                 exception = context.get('exception')
-                if exception:
-                    reason = f"Task failed: {str(exception)[:200]}"
+                
+                # Check if this is a manual failure (no exception or specific patterns)
+                if not exception:
+                    # Check task history to see if it was previously successful
+                    from airflow.models.taskinstance import TaskInstance as TI
+                    from airflow.utils.db import provide_session
+                    
+                    @provide_session
+                    def check_previous_success(session=None):
+                        previous_ti = session.query(TI).filter(
+                            TI.dag_id == dag_id,
+                            TI.task_id == task_id,
+                            TI.run_id == run_id
+                        ).first()
+                        return previous_ti and hasattr(previous_ti, 'state') and str(previous_ti.state).upper() == 'SUCCESS'
+                    
+                    try:
+                        was_successful = check_previous_success()
+                        if was_successful:
+                            reason = "Task manually marked as FAILED from Airflow UI (was previously successful)"
+                        else:
+                            reason = "Task manually marked as FAILED from Airflow UI"
+                    except Exception:
+                        reason = "Task manually marked as FAILED from Airflow UI"
                 else:
-                    reason = "Task failed in Airflow"
+                    reason = f"Task failed: {str(exception)[:200]}"
             elif status == 'SUCCEEDED':
                 reason = "Task completed successfully in Airflow"
         

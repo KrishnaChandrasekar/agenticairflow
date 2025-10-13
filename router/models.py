@@ -27,6 +27,9 @@ class Job(Base):
     updated_at = Column(DateTime, default=now_utc, onupdate=now_utc)
     started_at = Column(DateTime, nullable=True)   # When job execution starts
     finished_at = Column(DateTime, nullable=True)  # When job execution completes
+    force_failed = Column(Boolean, default=False)  # True if manually failed from Airflow UI
+    force_failed_reason = Column(Text, nullable=True)  # Reason for force failure
+    actual_rc = Column(Integer, nullable=True)     # Actual return code from agent (preserved when force failed)
 
 class Agent(Base):
     __tablename__ = "agents"
