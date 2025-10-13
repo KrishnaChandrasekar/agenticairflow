@@ -309,8 +309,9 @@ func main() {
 
 	fmt.Printf("[go-agent] Starting with config: agentID=%s, routerURL=%s, selfURL=%s\n", agentID, routerURL, selfURL)
 
-	// --- Reconciliation logic: scan job dirs and report to router ---
+	// --- Enhanced Reconciliation logic: scan job dirs and report to router with timing data ---
 	go func() {
+		fmt.Printf("[go-agent] Starting reconciliation for agent %s\n", agentID)
 		jobs := []map[string]interface{}{}
 		entries, err := os.ReadDir(agentHome)
 		if err == nil {
@@ -329,24 +330,29 @@ func main() {
 				var rc *int = nil
 				var startedAt *int64 = nil
 				var finishedAt *int64 = nil
+
 				// Read pid
 				if b, err := os.ReadFile(pidPath); err == nil {
-					if p, err := strconv.Atoi(string(b)); err == nil {
+					if p, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
 						pid = &p
 					}
 				}
-				// Read timing files
+
+				// Read timing files - CRITICAL: preserve actual job timing
 				if b, err := os.ReadFile(startedAtPath); err == nil {
 					if t, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64); err == nil {
 						startedAt = &t
+						fmt.Printf("[go-agent] Reconcile: Job %s started_at=%d\n", jobID, *startedAt)
 					}
 				}
 				if b, err := os.ReadFile(finishedAtPath); err == nil {
 					if t, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64); err == nil {
 						finishedAt = &t
+						fmt.Printf("[go-agent] Reconcile: Job %s finished_at=%d\n", jobID, *finishedAt)
 					}
 				}
-				// Check if process is alive
+
+				// Check if process is alive for running jobs
 				alive := false
 				if pid != nil && *pid > 0 {
 					proc, err := os.FindProcess(*pid)
@@ -356,57 +362,78 @@ func main() {
 						}
 					}
 				}
+
+				// Determine status with improved logic
 				if alive {
 					status = "RUNNING"
+					fmt.Printf("[go-agent] Reconcile: Job %s is RUNNING (PID=%d)\n", jobID, *pid)
 				} else if b, err := os.ReadFile(rcPath); err == nil {
-					if r, err := strconv.Atoi(string(b)); err == nil {
+					// Job has completed, read return code
+					if r, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
 						rc = &r
 						if r == 0 {
 							status = "SUCCEEDED"
 						} else {
 							status = "FAILED"
 						}
+						fmt.Printf("[go-agent] Reconcile: Job %s completed with status=%s rc=%d\n", jobID, status, r)
 					} else {
 						rcVal := 1
 						rc = &rcVal
 						status = "FAILED"
+						fmt.Printf("[go-agent] Reconcile: Job %s failed to parse rc, marking as FAILED\n", jobID)
+					}
+				} else if pid != nil {
+					// Has PID but no RC and not alive - orphaned job
+					status = "FAILED"
+					rcVal := 130 // Process terminated by signal
+					rc = &rcVal
+					fmt.Printf("[go-agent] Reconcile: Job %s orphaned (PID=%d but not alive), marking as FAILED\n", jobID, *pid)
+
+					// Write missing rc file to prevent future confusion
+					os.WriteFile(rcPath, []byte("130"), 0644)
+					if finishedAt == nil {
+						// Set finished_at to current time if missing
+						currentTime := time.Now().Unix()
+						finishedAt = &currentTime
+						os.WriteFile(finishedAtPath, []byte(strconv.FormatInt(currentTime, 10)), 0644)
 					}
 				}
-				jobs = append(jobs, map[string]interface{}{
+
+				jobData := map[string]interface{}{
 					"job_id": jobID,
 					"status": status,
 					"pid": func() interface{} {
 						if pid != nil {
 							return *pid
-						} else {
-							return nil
 						}
+						return nil
 					}(),
 					"rc": func() interface{} {
 						if rc != nil {
 							return *rc
-						} else {
-							return nil
 						}
+						return nil
 					}(),
 					"started_at": func() interface{} {
 						if startedAt != nil {
 							return *startedAt
-						} else {
-							return nil
 						}
+						return nil
 					}(),
 					"finished_at": func() interface{} {
 						if finishedAt != nil {
 							return *finishedAt
-						} else {
-							return nil
 						}
+						return nil
 					}(),
-				})
+				}
+				jobs = append(jobs, jobData)
 			}
 		}
+
 		if len(jobs) > 0 {
+			fmt.Printf("[go-agent] Reconciling %d jobs to router\n", len(jobs))
 			payload := map[string]interface{}{
 				"agent_id": agentID,
 				"jobs":     jobs,
@@ -420,8 +447,15 @@ func main() {
 				resp, err := client.Do(req)
 				if err == nil {
 					defer resp.Body.Close()
+					fmt.Printf("[go-agent] Reconciliation response: %d\n", resp.StatusCode)
+				} else {
+					fmt.Printf("[go-agent] Reconciliation request failed: %v\n", err)
 				}
+			} else {
+				fmt.Printf("[go-agent] Reconciliation request creation failed: %v\n", err)
 			}
+		} else {
+			fmt.Printf("[go-agent] No jobs to reconcile\n")
 		}
 	}()
 
@@ -603,7 +637,6 @@ func main() {
 			}
 		}
 		c.JSON(200, response)
-		return
 	})
 
 	r.GET("/logs/:job_id", func(c *gin.Context) {
@@ -934,7 +967,6 @@ func runJob(job *Job, timeout int) {
 	os.WriteFile(pidPath, []byte(strconv.Itoa(job.PID)), 0644)
 	// No need to wait for the detached process; just return
 	// The status endpoint will check the process and update status/rc as needed
-	return
 }
 
 // getExitCode extracts the exit code from an error returned by exec.Cmd.Wait()

@@ -52,17 +52,22 @@ def format_execution_time(started_at, finished_at, job_status=None):
     """Calculate and format execution time as human-readable string."""
     if not started_at:
         return "-"
+    
     # Handle both datetime objects and timestamp strings for started_at
     if isinstance(started_at, str):
         try:
             started_at = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
         except:
             return "-"
-    # For running jobs without finished_at, use current UTC time
+    
+    # Enhanced logic for finished_at handling
     if not finished_at:
-        # Only show running time if job is actually running
+        # For running jobs, show current execution time
         if job_status == "RUNNING":
             finished_at = datetime.utcnow()
+        # For completed jobs without finished_at, don't show misleading time
+        elif job_status in ["SUCCEEDED", "FAILED"]:
+            return "Unknown"  # Indicates completed but timing data missing
         else:
             return "-"
     else:
@@ -72,16 +77,21 @@ def format_execution_time(started_at, finished_at, job_status=None):
                 finished_at = datetime.fromisoformat(finished_at.replace('Z', '+00:00'))
             except:
                 return "-"
+    
     # Ensure both timestamps are timezone-naive UTC for proper comparison
     if hasattr(started_at, 'tzinfo') and started_at.tzinfo is not None:
         started_at = started_at.astimezone(timezone.utc).replace(tzinfo=None)
     if hasattr(finished_at, 'tzinfo') and finished_at.tzinfo is not None:
         finished_at = finished_at.astimezone(timezone.utc).replace(tzinfo=None)
+    
     duration = finished_at - started_at
     total_seconds = int(duration.total_seconds())
-    # Ensure we don't show negative time (in case of clock skew)
+    
+    # Handle edge cases
     if total_seconds < 0:
-        return "-"
+        return "-"  # Indicates timing issue (clock skew or data corruption)
+    
+    # Format duration appropriately
     if total_seconds < 60:
         return f"{total_seconds}s"
     elif total_seconds < 3600:
@@ -735,6 +745,8 @@ def agents_reconcile():
             agent_status = job_data.get("status", "").strip().upper()
             agent_pid = job_data.get("pid")
             agent_rc = job_data.get("rc")
+            agent_started_at = job_data.get("started_at")  # Unix timestamp
+            agent_finished_at = job_data.get("finished_at")  # Unix timestamp
             
             if not job_id or not agent_status:
                 continue
@@ -754,26 +766,73 @@ def agents_reconcile():
             current_status = job.status
             should_update = False
             
-            # Reconciliation logic based on agent status
+            print(f"[ROUTER DEBUG] Reconcile: Processing job {job_id}, agent_status={agent_status}, agent_started_at={agent_started_at}, agent_finished_at={agent_finished_at}", file=sys.stderr)
+            
+            # Parse agent timing data
+            parsed_started_at = None
+            parsed_finished_at = None
+            
+            if agent_started_at is not None:
+                try:
+                    if isinstance(agent_started_at, (int, float)):
+                        parsed_started_at = datetime.utcfromtimestamp(agent_started_at)
+                    elif isinstance(agent_started_at, str):
+                        parsed_started_at = datetime.utcfromtimestamp(int(agent_started_at))
+                    print(f"[ROUTER DEBUG] Reconcile: Parsed agent started_at for {job_id}: {parsed_started_at}", file=sys.stderr)
+                except (ValueError, TypeError) as e:
+                    print(f"[ROUTER DEBUG] Reconcile: Failed to parse started_at for {job_id}: {e}", file=sys.stderr)
+            
+            if agent_finished_at is not None:
+                try:
+                    if isinstance(agent_finished_at, (int, float)):
+                        parsed_finished_at = datetime.utcfromtimestamp(agent_finished_at)
+                    elif isinstance(agent_finished_at, str):
+                        parsed_finished_at = datetime.utcfromtimestamp(int(agent_finished_at))
+                    print(f"[ROUTER DEBUG] Reconcile: Parsed agent finished_at for {job_id}: {parsed_finished_at}", file=sys.stderr)
+                except (ValueError, TypeError) as e:
+                    print(f"[ROUTER DEBUG] Reconcile: Failed to parse finished_at for {job_id}: {e}", file=sys.stderr)
+            
+            # Reconciliation logic with timing preservation
             if agent_status == "SUCCEEDED" and agent_rc is not None:
                 if current_status != "SUCCEEDED":
                     job.status = "SUCCEEDED"
                     job.rc = agent_rc
-                    job.finished_at = now_utc()
+                    # Preserve agent timing if available, otherwise use current time
+                    if parsed_finished_at and not job.finished_at:
+                        job.finished_at = parsed_finished_at
+                    elif not job.finished_at:
+                        job.finished_at = now_utc()
+                    # Set started_at from agent if not already set
+                    if parsed_started_at and not job.started_at:
+                        job.started_at = parsed_started_at
                     should_update = True
+                    print(f"[ROUTER DEBUG] Reconcile: Job {job_id} SUCCEEDED, started_at={job.started_at}, finished_at={job.finished_at}", file=sys.stderr)
                     
             elif agent_status == "FAILED" and agent_rc is not None:
                 if current_status != "FAILED":
                     job.status = "FAILED"
                     job.rc = agent_rc
-                    job.finished_at = now_utc()
+                    # Preserve agent timing if available, otherwise use current time
+                    if parsed_finished_at and not job.finished_at:
+                        job.finished_at = parsed_finished_at
+                    elif not job.finished_at:
+                        job.finished_at = now_utc()
+                    # Set started_at from agent if not already set
+                    if parsed_started_at and not job.started_at:
+                        job.started_at = parsed_started_at
                     should_update = True
+                    print(f"[ROUTER DEBUG] Reconcile: Job {job_id} FAILED, started_at={job.started_at}, finished_at={job.finished_at}", file=sys.stderr)
                     
             elif agent_status == "RUNNING":
                 if current_status not in ["RUNNING", "SUCCEEDED", "FAILED"]:
                     job.status = "RUNNING"
-                    job.started_at = job.started_at or now_utc()
+                    # Set started_at from agent if available and not already set
+                    if parsed_started_at and not job.started_at:
+                        job.started_at = parsed_started_at
+                    elif not job.started_at:
+                        job.started_at = now_utc()
                     should_update = True
+                    print(f"[ROUTER DEBUG] Reconcile: Job {job_id} RUNNING, started_at={job.started_at}", file=sys.stderr)
             
             if should_update:
                 job.updated_at = now_utc()
@@ -1151,12 +1210,14 @@ def status(job_id: str):
                 if st.get("finished_at"):
                     agent_finish_time = parse_agent_timestamp(st.get("finished_at"))
                     print(f"[ROUTER DEBUG] Parsed agent finish time: {agent_finish_time}", file=sys.stderr)
-                    if agent_finish_time and not j.finished_at:
-                        j.finished_at = agent_finish_time
-                        print(f"[ROUTER DEBUG] Set finished_at from agent: {j.finished_at}", file=sys.stderr)
-                    elif j.status != st["status"] and not j.finished_at:  # Fallback to router time if no agent timestamp
+                    if agent_finish_time:
+                        # CRITICAL FIX: Always use agent timing over database timing for accuracy
+                        if not j.finished_at or (j.finished_at and agent_finish_time != j.finished_at):
+                            j.finished_at = agent_finish_time
+                            print(f"[ROUTER DEBUG] Set/updated finished_at from agent: {j.finished_at}", file=sys.stderr)
+                    elif j.status != st["status"] and not j.finished_at:  # Fallback to router time only if no agent timestamp
                         j.finished_at = now_utc()
-                        print(f"[ROUTER DEBUG] Set finished_at to router time: {j.finished_at}", file=sys.stderr)
+                        print(f"[ROUTER DEBUG] Set finished_at to router time as fallback: {j.finished_at}", file=sys.stderr)
                 
                 j.updated_at = now_utc(); s.commit()
             elif st.get("status") == "RUNNING":
@@ -1167,15 +1228,16 @@ def status(job_id: str):
                     j.agent_id = agent.agent_id
                 
                 # Use agent-provided start timestamp if available
-                if not j.started_at and st.get("started_at"):
+                if st.get("started_at"):
                     agent_start_time = parse_agent_timestamp(st.get("started_at"))
                     if agent_start_time:
-                        j.started_at = agent_start_time
-                        print(f"[ROUTER DEBUG] Set started_at from agent: {j.started_at}", file=sys.stderr)
-                    elif prev_status != "RUNNING":  # Fallback to router time if no agent timestamp
-                        j.started_at = now_utc()
-                elif prev_status != "RUNNING" and not j.started_at:  # Fallback to router time
+                        # CRITICAL FIX: Always use agent timing over database timing for accuracy
+                        if not j.started_at or (j.started_at and agent_start_time != j.started_at):
+                            j.started_at = agent_start_time
+                            print(f"[ROUTER DEBUG] Set/updated started_at from agent: {j.started_at}", file=sys.stderr)
+                elif prev_status != "RUNNING" and not j.started_at:  # Fallback to router time only if no agent timestamp
                     j.started_at = now_utc()
+                    print(f"[ROUTER DEBUG] Set started_at to router time as fallback: {j.started_at}", file=sys.stderr)
                 
                 j.updated_at = now_utc(); s.commit()
         elif agent_resp.status_code == 404:
