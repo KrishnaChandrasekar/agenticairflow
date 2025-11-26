@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import SpikeGraphLogo from './SpikeGraphLogo';
 import { API_BASE } from '../utils/api';
 
@@ -117,6 +117,15 @@ const LoginPage = ({ onLoginSuccess }) => {
     }
   };
 
+  // Ref for username input
+  const usernameInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!showRegister && usernameInputRef.current) {
+      usernameInputRef.current.focus();
+    }
+  }, [showRegister]);
+
   return (
     <div className="bg-slate-50 min-h-screen flex items-center justify-center">
       <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md mx-4">
@@ -150,6 +159,7 @@ const LoginPage = ({ onLoginSuccess }) => {
                 placeholder="Enter your username"
                 required
                 disabled={loading}
+                ref={usernameInputRef}
               />
             </div>
 

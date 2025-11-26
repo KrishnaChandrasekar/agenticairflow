@@ -54,7 +54,7 @@ services:
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
       AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
-      AIRFLOW_CONN_AGENTIC_SSH_DEFAULT: http://:router-secret@router:8000
+      AIRFLOW_CONN_AGENTIC_RUN_DEFAULT: http://:router-secret@router:8000
     volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/plugins:/opt/airflow/plugins
@@ -76,7 +76,7 @@ services:
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
       AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
-      AIRFLOW_CONN_AGENTIC_SSH_DEFAULT: http://:router-secret@router:8000
+      AIRFLOW_CONN_AGENTIC_RUN_DEFAULT: http://:router-secret@router:8000
     volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/plugins:/opt/airflow/plugins
@@ -96,7 +96,7 @@ services:
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
       AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
-      AIRFLOW_CONN_AGENTIC_SSH_DEFAULT: http://:router-secret@router:8000
+      AIRFLOW_CONN_AGENTIC_RUN_DEFAULT: http://:router-secret@router:8000
     volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/plugins:/opt/airflow/plugins
@@ -116,7 +116,7 @@ services:
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
       AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
-      AIRFLOW_CONN_AGENTIC_SSH_DEFAULT: http://:router-secret@router:8000
+      AIRFLOW_CONN_AGENTIC_RUN_DEFAULT: http://:router-secret@router:8000
     volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/plugins:/opt/airflow/plugins

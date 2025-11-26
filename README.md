@@ -62,10 +62,10 @@ curl http://localhost:8001/health      # Agent info
 - DAG: `agentic_mvp_demo` (unpause, then trigger)
 
 
-The connection `agentic_ssh_default` is preconfigured via env:
+The connection `agentic_run_default` is preconfigured via env:
 
 ```
-AIRFLOW_CONN_AGENTIC_SSH_DEFAULT='http://:router-secret@router:8000'
+AIRFLOW_CONN_AGENTIC_RUN_DEFAULT='http://:router-secret@router:8000'
 ```
 The plugin uses this to submit jobs to the Router and poll status.
 

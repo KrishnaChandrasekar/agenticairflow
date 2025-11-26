@@ -309,8 +309,9 @@ func main() {
 
 	fmt.Printf("[go-agent] Starting with config: agentID=%s, routerURL=%s, selfURL=%s\n", agentID, routerURL, selfURL)
 
-	// --- Reconciliation logic: scan job dirs and report to router ---
+	// --- Enhanced Reconciliation logic: scan job dirs and report to router with timing data ---
 	go func() {
+		fmt.Printf("[go-agent] Starting reconciliation for agent %s\n", agentID)
 		jobs := []map[string]interface{}{}
 		entries, err := os.ReadDir(agentHome)
 		if err == nil {
@@ -329,24 +330,29 @@ func main() {
 				var rc *int = nil
 				var startedAt *int64 = nil
 				var finishedAt *int64 = nil
+
 				// Read pid
 				if b, err := os.ReadFile(pidPath); err == nil {
-					if p, err := strconv.Atoi(string(b)); err == nil {
+					if p, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
 						pid = &p
 					}
 				}
-				// Read timing files
+
+				// Read timing files - CRITICAL: preserve actual job timing
 				if b, err := os.ReadFile(startedAtPath); err == nil {
 					if t, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64); err == nil {
 						startedAt = &t
+						fmt.Printf("[go-agent] Reconcile: Job %s started_at=%d\n", jobID, *startedAt)
 					}
 				}
 				if b, err := os.ReadFile(finishedAtPath); err == nil {
 					if t, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64); err == nil {
 						finishedAt = &t
+						fmt.Printf("[go-agent] Reconcile: Job %s finished_at=%d\n", jobID, *finishedAt)
 					}
 				}
-				// Check if process is alive
+
+				// Check if process is alive for running jobs
 				alive := false
 				if pid != nil && *pid > 0 {
 					proc, err := os.FindProcess(*pid)
@@ -356,57 +362,78 @@ func main() {
 						}
 					}
 				}
+
+				// Determine status with improved logic
 				if alive {
 					status = "RUNNING"
+					fmt.Printf("[go-agent] Reconcile: Job %s is RUNNING (PID=%d)\n", jobID, *pid)
 				} else if b, err := os.ReadFile(rcPath); err == nil {
-					if r, err := strconv.Atoi(string(b)); err == nil {
+					// Job has completed, read return code
+					if r, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
 						rc = &r
 						if r == 0 {
 							status = "SUCCEEDED"
 						} else {
 							status = "FAILED"
 						}
+						fmt.Printf("[go-agent] Reconcile: Job %s completed with status=%s rc=%d\n", jobID, status, r)
 					} else {
 						rcVal := 1
 						rc = &rcVal
 						status = "FAILED"
+						fmt.Printf("[go-agent] Reconcile: Job %s failed to parse rc, marking as FAILED\n", jobID)
+					}
+				} else if pid != nil {
+					// Has PID but no RC and not alive - orphaned job
+					status = "FAILED"
+					rcVal := 130 // Process terminated by signal
+					rc = &rcVal
+					fmt.Printf("[go-agent] Reconcile: Job %s orphaned (PID=%d but not alive), marking as FAILED\n", jobID, *pid)
+
+					// Write missing rc file to prevent future confusion
+					os.WriteFile(rcPath, []byte("130"), 0644)
+					if finishedAt == nil {
+						// Set finished_at to current time if missing
+						currentTime := time.Now().Unix()
+						finishedAt = &currentTime
+						os.WriteFile(finishedAtPath, []byte(strconv.FormatInt(currentTime, 10)), 0644)
 					}
 				}
-				jobs = append(jobs, map[string]interface{}{
+
+				jobData := map[string]interface{}{
 					"job_id": jobID,
 					"status": status,
 					"pid": func() interface{} {
 						if pid != nil {
 							return *pid
-						} else {
-							return nil
 						}
+						return nil
 					}(),
 					"rc": func() interface{} {
 						if rc != nil {
 							return *rc
-						} else {
-							return nil
 						}
+						return nil
 					}(),
 					"started_at": func() interface{} {
 						if startedAt != nil {
 							return *startedAt
-						} else {
-							return nil
 						}
+						return nil
 					}(),
 					"finished_at": func() interface{} {
 						if finishedAt != nil {
 							return *finishedAt
-						} else {
-							return nil
 						}
+						return nil
 					}(),
-				})
+				}
+				jobs = append(jobs, jobData)
 			}
 		}
+
 		if len(jobs) > 0 {
+			fmt.Printf("[go-agent] Reconciling %d jobs to router\n", len(jobs))
 			payload := map[string]interface{}{
 				"agent_id": agentID,
 				"jobs":     jobs,
@@ -420,8 +447,15 @@ func main() {
 				resp, err := client.Do(req)
 				if err == nil {
 					defer resp.Body.Close()
+					fmt.Printf("[go-agent] Reconciliation response: %d\n", resp.StatusCode)
+				} else {
+					fmt.Printf("[go-agent] Reconciliation request failed: %v\n", err)
 				}
+			} else {
+				fmt.Printf("[go-agent] Reconciliation request creation failed: %v\n", err)
 			}
+		} else {
+			fmt.Printf("[go-agent] No jobs to reconcile\n")
 		}
 	}()
 
@@ -603,7 +637,6 @@ func main() {
 			}
 		}
 		c.JSON(200, response)
-		return
 	})
 
 	r.GET("/logs/:job_id", func(c *gin.Context) {
@@ -620,6 +653,171 @@ func main() {
 		}
 		defer f.Close()
 		c.DataFromReader(200, -1, "text/plain", f, nil)
+	})
+
+	r.POST("/stop/:job_id", func(c *gin.Context) {
+		if c.GetHeader("X-Agent-Token") != agentToken {
+			c.JSON(401, gin.H{"error": "unauthorized"})
+			return
+		}
+
+		jobID := c.Param("job_id")
+
+		// Parse request body for reason (optional)
+		var req struct {
+			Reason string `json:"reason"`
+		}
+		c.BindJSON(&req)
+
+		jobDir := filepath.Join(agentHome, jobID)
+		pidPath := filepath.Join(jobDir, "pid")
+		logPath := filepath.Join(jobDir, "run.log")
+		rcPath := filepath.Join(jobDir, "rc")
+		statusPath := filepath.Join(jobDir, "status.txt")
+		finishedAtPath := filepath.Join(jobDir, "finished_at")
+
+		// Check if job already completed
+		if rcBytes, err := os.ReadFile(rcPath); err == nil {
+			c.JSON(200, gin.H{
+				"message": "Job already completed",
+				"job_id":  jobID,
+				"rc":      string(rcBytes),
+			})
+			return
+		}
+
+		// Read PID file
+		pidBytes, err := os.ReadFile(pidPath)
+		if err != nil {
+			c.JSON(404, gin.H{
+				"error":  "Job not found or no PID file",
+				"job_id": jobID,
+			})
+			return
+		}
+
+		pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+		if err != nil || pid <= 0 {
+			c.JSON(400, gin.H{
+				"error":  "Invalid PID in file",
+				"job_id": jobID,
+			})
+			return
+		}
+
+		// Find process
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			c.JSON(404, gin.H{
+				"error":  "Process not found",
+				"job_id": jobID,
+				"pid":    pid,
+			})
+			return
+		}
+
+		// Check if process is still alive
+		if err := proc.Signal(syscall.Signal(0)); err != nil {
+			// Process already dead, mark as failed
+			os.WriteFile(rcPath, []byte("1"), 0644)
+			os.WriteFile(statusPath, []byte("FAILED"), 0644)
+			os.WriteFile(finishedAtPath, []byte(fmt.Sprintf("%d", time.Now().Unix())), 0644)
+
+			c.JSON(200, gin.H{
+				"message": "Process already terminated, marked as failed",
+				"job_id":  jobID,
+				"pid":     pid,
+			})
+			return
+		}
+
+		// Log stop request
+		reason := req.Reason
+		if reason == "" {
+			reason = "Stop requested by Router"
+		}
+
+		logMsg := fmt.Sprintf("[agent] Stop requested: %s (PID: %d)\n", reason, pid)
+		if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644); err == nil {
+			f.WriteString(logMsg)
+			f.Close()
+		}
+
+		// Try graceful termination first (SIGTERM)
+		fmt.Printf("[go-agent] Sending SIGTERM to job %s (PID: %d)\n", jobID, pid)
+		err = proc.Signal(syscall.SIGTERM)
+		if err != nil {
+			c.JSON(500, gin.H{
+				"error":  "Failed to send SIGTERM",
+				"job_id": jobID,
+				"pid":    pid,
+			})
+			return
+		}
+
+		// Wait up to 5 seconds for graceful termination
+		terminated := false
+		for i := 0; i < 50; i++ { // 50 * 100ms = 5 seconds
+			time.Sleep(100 * time.Millisecond)
+			if err := proc.Signal(syscall.Signal(0)); err != nil {
+				terminated = true
+				break
+			}
+		}
+
+		// If still alive, force kill with SIGKILL
+		if !terminated {
+			fmt.Printf("[go-agent] Process still alive, sending SIGKILL to job %s (PID: %d)\n", jobID, pid)
+			if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644); err == nil {
+				f.WriteString("[agent] Graceful termination timeout, sending SIGKILL\n")
+				f.Close()
+			}
+
+			err = proc.Signal(syscall.SIGKILL)
+			if err != nil {
+				c.JSON(500, gin.H{
+					"error":  "Failed to send SIGKILL",
+					"job_id": jobID,
+					"pid":    pid,
+				})
+				return
+			}
+
+			// Wait a bit more for SIGKILL to take effect
+			for i := 0; i < 20; i++ { // 20 * 100ms = 2 seconds
+				time.Sleep(100 * time.Millisecond)
+				if err := proc.Signal(syscall.Signal(0)); err != nil {
+					terminated = true
+					break
+				}
+			}
+		}
+
+		// Write completion files
+		os.WriteFile(rcPath, []byte("1"), 0644) // Exit code 1 for killed process
+		os.WriteFile(statusPath, []byte("FAILED"), 0644)
+		os.WriteFile(finishedAtPath, []byte(fmt.Sprintf("%d", time.Now().Unix())), 0644)
+
+		// Final log entry
+		statusMsg := "terminated gracefully"
+		if !terminated {
+			statusMsg = "force killed (may still be running)"
+		}
+
+		finalLogMsg := fmt.Sprintf("[agent] Process %s, marked as FAILED\n", statusMsg)
+		if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644); err == nil {
+			f.WriteString(finalLogMsg)
+			f.Close()
+		}
+
+		fmt.Printf("[go-agent] Job %s stopped (PID: %d, %s)\n", jobID, pid, statusMsg)
+
+		c.JSON(200, gin.H{
+			"message":    fmt.Sprintf("Job stopped successfully (%s)", statusMsg),
+			"job_id":     jobID,
+			"pid":        pid,
+			"terminated": terminated,
+		})
 	})
 
 	r.Run(":8001")
@@ -769,7 +967,6 @@ func runJob(job *Job, timeout int) {
 	os.WriteFile(pidPath, []byte(strconv.Itoa(job.PID)), 0644)
 	// No need to wait for the detached process; just return
 	// The status endpoint will check the process and update status/rc as needed
-	return
 }
 
 // getExitCode extracts the exit code from an error returned by exec.Cmd.Wait()

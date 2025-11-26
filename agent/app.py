@@ -620,6 +620,158 @@ def logs(job_id: str):
     return send_file(logp, mimetype="text/plain")
 
 
+@app.post("/stop/<job_id>")
+def stop_job(job_id: str):
+    """
+    Stop a running job by sending SIGTERM to the process
+    Called by Router when Airflow task is marked as failed
+    """
+    if request.headers.get("X-Agent-Token") != AGENT_TOKEN:
+        return jsonify({"error": "unauthorized"}), 401
+
+    data = request.get_json(force=True) or {}
+    force = data.get("force", False)
+    reason = data.get("reason", "Job termination requested")
+
+    home = os.path.join(AGENT_HOME, job_id)
+    pidp = os.path.join(home, "pid")
+    logp = os.path.join(home, "run.log")
+    rcp = os.path.join(home, "rc")
+    finished_at_file = os.path.join(home, "finished_at")
+
+    # Check if job directory exists
+    if not os.path.exists(home):
+        return jsonify({
+            "error": "job_not_found",
+            "message": f"Job {job_id} not found on this agent"
+        }), 404
+
+    # Check if job is already completed
+    if os.path.exists(rcp):
+        try:
+            rc = int(open(rcp, "r", encoding="utf-8", errors="ignore").read().strip())
+            status = "SUCCEEDED" if rc == 0 else "FAILED"
+            return jsonify({
+                "ok": True,
+                "message": f"Job {job_id} already completed with status {status}",
+                "status": status,
+                "rc": rc,
+                "action": "none"
+            })
+        except Exception:
+            pass
+
+    # Get PID and check if process is running
+    pid = None
+    if os.path.exists(pidp):
+        try:
+            pid = int(open(pidp, "r", encoding="utf-8", errors="ignore").read().strip())
+        except Exception:
+            pid = None
+
+    if pid and _alive(pid, job_id):
+        # Process is running, attempt to terminate it
+        try:
+            import signal
+            
+            _writeln(logp, f"[agent] Termination requested: {reason}\n")
+            
+            if force:
+                # Send SIGKILL for immediate termination
+                os.kill(pid, signal.SIGKILL)
+                _writeln(logp, f"[agent] Sent SIGKILL to PID {pid}\n")
+                signal_sent = "SIGKILL"
+            else:
+                # Send SIGTERM for graceful termination
+                os.kill(pid, signal.SIGTERM)
+                _writeln(logp, f"[agent] Sent SIGTERM to PID {pid}\n")
+                signal_sent = "SIGTERM"
+            
+            # Wait a moment to see if process terminates
+            time.sleep(0.5)
+            
+            # Check if process is still alive
+            still_alive = _alive(pid, job_id)
+            
+            if not still_alive:
+                # Process terminated, create completion files
+                _write_text(rcp, "143")  # 143 = terminated by SIGTERM
+                current_time = str(int(time.time()))
+                _write_text(finished_at_file, current_time)
+                _writeln(logp, f"[agent] Process terminated successfully\n")
+                _writeln(logp, f"[agent] status=FAILED\n")
+                
+                return jsonify({
+                    "ok": True,
+                    "message": f"Job {job_id} terminated successfully",
+                    "status": "FAILED",
+                    "rc": 143,
+                    "action": "terminated",
+                    "signal": signal_sent,
+                    "reason": reason
+                })
+            else:
+                return jsonify({
+                    "ok": True,
+                    "message": f"Termination signal sent to job {job_id}",
+                    "status": "RUNNING",
+                    "action": "signal_sent",
+                    "signal": signal_sent,
+                    "warning": "Process may still be running",
+                    "reason": reason
+                })
+                
+        except ProcessLookupError:
+            # Process already terminated
+            _cleanup_orphaned_job(job_id, f"Process terminated: {reason}")
+            return jsonify({
+                "ok": True,
+                "message": f"Job {job_id} process was already terminated",
+                "status": "FAILED",
+                "rc": 143,
+                "action": "cleanup",
+                "reason": reason
+            })
+        except PermissionError:
+            _writeln(logp, f"[agent] Permission denied when trying to terminate PID {pid}\n")
+            return jsonify({
+                "error": "permission_denied",
+                "message": f"Cannot terminate job {job_id}: permission denied",
+                "reason": reason
+            }), 403
+        except Exception as e:
+            _writeln(logp, f"[agent] Error terminating process: {e}\n")
+            return jsonify({
+                "error": "termination_failed",
+                "message": f"Failed to terminate job {job_id}: {str(e)}",
+                "reason": reason
+            }), 500
+    
+    elif pid:
+        # PID file exists but process is not alive (orphaned)
+        _cleanup_orphaned_job(job_id, f"Orphaned job cleanup: {reason}")
+        return jsonify({
+            "ok": True,
+            "message": f"Job {job_id} was orphaned, marked as failed",
+            "status": "FAILED",
+            "rc": 130,
+            "action": "cleanup",
+            "reason": reason
+        })
+    
+    else:
+        # No PID file, job never started properly
+        _cleanup_orphaned_job(job_id, f"Job never started properly: {reason}")
+        return jsonify({
+            "ok": True,
+            "message": f"Job {job_id} never started properly, marked as failed",
+            "status": "FAILED", 
+            "rc": 255,
+            "action": "cleanup",
+            "reason": reason
+        })
+
+
 
 # =========================
 # Secure registration logic

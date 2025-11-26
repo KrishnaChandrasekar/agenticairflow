@@ -328,8 +328,22 @@ const JobDrawer = memo(({ jobId, jobs, timezone, onClose }) => {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="form-label text-body-large font-semibold min-w-[80px]">RC:</span>
-                      <span className="text-mono-large bg-gray-100 px-2 py-1 rounded">{combinedJob.rc ?? "-"}</span>
+                      <span className="text-mono-large bg-gray-100 px-2 py-1 rounded">
+                          {combinedJob.rc ?? "-"}
+                        {combinedJob.actual_rc !== undefined && combinedJob.actual_rc !== null && (
+                          <span className="text-mono-large text-secondary ml-2">(Actual RC: {combinedJob.actual_rc})</span>
+                        )}
+                      </span>
                     </div>
+                    {/* Remarks for force-failed jobs */}
+                    {combinedJob.force_failed && combinedJob.force_failed_reason && (
+                      <div className="flex items-center gap-2">
+                        <span className="form-label text-body-large font-semibold min-w-[80px]">Remarks:</span>
+                        <span className="text-mono-large bg-red-50 px-2 py-1 rounded border border-red-200 text-red-700">
+                          {combinedJob.force_failed_reason}
+                        </span>
+                      </div>
+                    )}
                     <div>
                       <span className="form-label text-body-large font-semibold">Execution Time:</span>
                       <div className="flex items-center gap-2 mt-1">
